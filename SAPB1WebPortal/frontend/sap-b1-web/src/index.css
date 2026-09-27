@@ -1,0 +1,169 @@
+@import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap');
+
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+/* ==========================================================================
+   Design tokens. Every color used anywhere in the app should trace back to
+   one of these — components reference the Tailwind classes in
+   tailwind.config.js (bg-surface, text-ink-primary, border-border, …), which
+   map straight to these variables. Redefine a token once here and the whole
+   app (including charts and dark mode) follows.
+   Values are "R G B" triplets (no commas) so Tailwind's rgb(var(--x) / <alpha-value>)
+   pattern can apply opacity.
+   ========================================================================== */
+:root {
+  --brand-50: 240 244 251;
+  --brand-100: 223 232 245;
+  --brand-200: 194 211 235;
+  --brand-300: 152 176 217;
+  --brand-400: 100 133 194;
+  --brand-500: 61 96 165;
+  --brand-600: 45 75 138;
+  --brand-700: 34 58 110;
+  --brand-800: 26 44 82;
+  --brand-900: 19 32 58;
+  --brand-950: 12 20 38;
+
+  --background: 250 250 251;
+  --surface: 255 255 255;
+  --surface-secondary: 248 249 251;
+  --surface-tertiary: 241 243 246;
+  --border: 228 231 236;
+  --border-strong: 209 213 219;
+
+  --text-primary: 17 24 39;
+  --text-secondary: 75 85 99;
+  --text-tertiary: 148 163 184;
+  --text-inverse: 255 255 255;
+
+  --success: 22 163 74;
+  --success-bg: 220 252 231;
+  --warning: 180 108 8;
+  --warning-bg: 254 243 199;
+  --danger: 220 38 38;
+  --danger-bg: 254 226 226;
+  --info: 37 99 235;
+  --info-bg: 219 234 254;
+
+  color-scheme: light;
+}
+
+:root.dark {
+  --background: 10 14 23;
+  --surface: 17 23 35;
+  --surface-secondary: 22 29 43;
+  --surface-tertiary: 30 39 55;
+  --border: 39 48 66;
+  --border-strong: 58 70 92;
+
+  --text-primary: 241 245 249;
+  --text-secondary: 165 176 194;
+  --text-tertiary: 100 112 132;
+  --text-inverse: 15 20 30;
+
+  --success: 74 222 128;
+  --success-bg: 20 40 30;
+  --warning: 251 191 36;
+  --warning-bg: 45 36 15;
+  --danger: 248 113 113;
+  --danger-bg: 48 22 22;
+  --info: 96 165 250;
+  --info-bg: 20 30 48;
+
+  color-scheme: dark;
+}
+
+html, body, #root {
+  height: 100%;
+}
+
+* {
+  border-color: rgb(var(--border));
+}
+
+body {
+  @apply bg-bg text-ink-primary font-sans antialiased;
+}
+
+::selection {
+  background: rgb(var(--brand-200));
+}
+
+/* Thin, unobtrusive scrollbars everywhere — a small but real signal of polish. */
+* {
+  scrollbar-width: thin;
+  scrollbar-color: rgb(var(--border-strong)) transparent;
+}
+*::-webkit-scrollbar {
+  width: 8px;
+  height: 8px;
+}
+*::-webkit-scrollbar-thumb {
+  background: rgb(var(--border-strong));
+  border-radius: 9999px;
+}
+*::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+@layer components {
+  .card {
+    @apply bg-surface rounded-xl border border-border shadow-card p-5;
+  }
+
+  .btn-primary {
+    @apply inline-flex items-center justify-center gap-2 bg-brand-600 hover:bg-brand-700 active:bg-brand-800
+      text-white text-sm font-medium px-4 py-2.5 rounded-lg shadow-subtle transition-all duration-150
+      focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-brand-500 focus-visible:ring-offset-2 focus-visible:ring-offset-surface
+      disabled:opacity-50 disabled:cursor-not-allowed disabled:hover:bg-brand-600;
+  }
+
+  .btn-secondary {
+    @apply inline-flex items-center justify-center gap-2 bg-surface hover:bg-surface-tertiary
+      text-ink-primary text-sm font-medium px-4 py-2.5 rounded-lg border border-border-strong transition-all duration-150
+      focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-brand-500 focus-visible:ring-offset-2 focus-visible:ring-offset-surface
+      disabled:opacity-50 disabled:cursor-not-allowed;
+  }
+
+  .btn-ghost {
+    @apply inline-flex items-center justify-center gap-2 text-ink-secondary hover:text-ink-primary hover:bg-surface-tertiary
+      text-sm font-medium px-3 py-2 rounded-lg transition-all duration-150
+      focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-brand-500;
+  }
+
+  .input-field {
+    @apply bg-surface border border-border-strong rounded-lg px-3.5 py-2.5 w-full text-sm text-ink-primary
+      placeholder:text-ink-tertiary transition-all duration-150
+      focus:outline-none focus:ring-2 focus:ring-brand-500/40 focus:border-brand-500;
+  }
+
+  .badge {
+    @apply inline-flex items-center gap-1 text-xs font-medium px-2.5 py-1 rounded-full whitespace-nowrap;
+  }
+  .badge-success { @apply badge bg-success-bg text-success; }
+  .badge-warning { @apply badge bg-warning-bg text-warning; }
+  .badge-danger { @apply badge bg-danger-bg text-danger; }
+  .badge-info { @apply badge bg-info-bg text-info; }
+  .badge-neutral { @apply badge bg-surface-tertiary text-ink-secondary; }
+
+  .skeleton {
+    @apply relative overflow-hidden bg-surface-tertiary rounded-md;
+  }
+  .skeleton::after {
+    content: '';
+    @apply absolute inset-0 -translate-x-full animate-shimmer;
+    background: linear-gradient(90deg, transparent, rgb(var(--surface) / 0.5), transparent);
+  }
+}
+
+@layer utilities {
+  .no-scrollbar {
+    scrollbar-width: none;
+    -ms-overflow-style: none;
+  }
+  .no-scrollbar::-webkit-scrollbar {
+    display: none;
+  }
+}

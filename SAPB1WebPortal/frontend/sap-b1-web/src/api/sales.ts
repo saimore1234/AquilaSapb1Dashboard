@@ -1,0 +1,68 @@
+import { apiClient } from './client';
+import type {
+  ApiResponse,
+  PagedResult,
+  SalesDocumentQuery,
+  SalesQuotation,
+  SalesQuotationDetail,
+  SalesOrder,
+  SalesOrderDetail,
+  Delivery,
+  DeliveryDetail,
+  ArInvoice,
+  ArInvoiceDetail,
+  ArCreditMemo,
+  ArCreditMemoDetail,
+  IncomingPayment,
+  IncomingPaymentDetail,
+  SalesDashboard,
+  SalesAnalytics
+} from '../types';
+
+// Every function here talks to the existing GET /api/sales/* endpoints —
+// the company is always resolved server-side from the JWT; nothing here ever
+// sends a database/company parameter.
+
+async function unwrap<T>(promise: Promise<{ data: ApiResponse<T> }>, notFoundMessage: string): Promise<T> {
+  const { data } = await promise;
+  if (!data.success || data.data === null || data.data === undefined) {
+    throw new Error(data.message || notFoundMessage);
+  }
+  return data.data;
+}
+
+export const getSalesDashboard = () =>
+  unwrap<SalesDashboard>(apiClient.get('/sales/dashboard'), 'Failed to load the sales dashboard.');
+
+export const getSalesAnalytics = () =>
+  unwrap<SalesAnalytics>(apiClient.get('/sales/analytics'), 'Failed to load sales analytics.');
+
+export const getSalesQuotations = (query: SalesDocumentQuery) =>
+  unwrap<PagedResult<SalesQuotation>>(apiClient.get('/sales/quotations', { params: query }), 'Failed to load sales quotations.');
+export const getSalesQuotationByEntry = (docEntry: number) =>
+  unwrap<SalesQuotationDetail>(apiClient.get(`/sales/quotations/${docEntry}`), 'Sales Quotation not found.');
+
+export const getSalesOrders = (query: SalesDocumentQuery) =>
+  unwrap<PagedResult<SalesOrder>>(apiClient.get('/sales/orders', { params: query }), 'Failed to load sales orders.');
+export const getSalesOrderByEntry = (docEntry: number) =>
+  unwrap<SalesOrderDetail>(apiClient.get(`/sales/orders/${docEntry}`), 'Sales Order not found.');
+
+export const getDeliveries = (query: SalesDocumentQuery) =>
+  unwrap<PagedResult<Delivery>>(apiClient.get('/sales/deliveries', { params: query }), 'Failed to load deliveries.');
+export const getDeliveryByEntry = (docEntry: number) =>
+  unwrap<DeliveryDetail>(apiClient.get(`/sales/deliveries/${docEntry}`), 'Delivery not found.');
+
+export const getArInvoices = (query: SalesDocumentQuery) =>
+  unwrap<PagedResult<ArInvoice>>(apiClient.get('/sales/invoices', { params: query }), 'Failed to load A/R invoices.');
+export const getArInvoiceByEntry = (docEntry: number) =>
+  unwrap<ArInvoiceDetail>(apiClient.get(`/sales/invoices/${docEntry}`), 'A/R Invoice not found.');
+
+export const getArCreditMemos = (query: SalesDocumentQuery) =>
+  unwrap<PagedResult<ArCreditMemo>>(apiClient.get('/sales/credit-memos', { params: query }), 'Failed to load A/R credit memos.');
+export const getArCreditMemoByEntry = (docEntry: number) =>
+  unwrap<ArCreditMemoDetail>(apiClient.get(`/sales/credit-memos/${docEntry}`), 'A/R Credit Memo not found.');
+
+export const getIncomingPayments = (query: SalesDocumentQuery) =>
+  unwrap<PagedResult<IncomingPayment>>(apiClient.get('/sales/payments', { params: query }), 'Failed to load payments.');
+export const getIncomingPaymentByEntry = (docEntry: number) =>
+  unwrap<IncomingPaymentDetail>(apiClient.get(`/sales/payments/${docEntry}`), 'Payment not found.');
