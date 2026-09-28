@@ -3,6 +3,7 @@ using System.Security.Claims;
 using System.Text;
 using Microsoft.AspNetCore.Authentication.JwtBearer;
 using Microsoft.AspNetCore.DataProtection;
+using Microsoft.AspNetCore.HttpOverrides;
 using Microsoft.IdentityModel.Tokens;
 using Microsoft.OpenApi.Models;
 using SAPB1.Api.Auth;
@@ -46,33 +47,8 @@ builder.Services.Configure<CompanyDatabaseOptions>(builder.Configuration.GetSect
 builder.Services.AddHttpContextAccessor();
 
 // ---------------------------------------------------------------
-// Data Protection — reversible encryption for stored SAP/SQL passwords in
-// Server / Company Configuration (see Auth/DataProtectionSecretProtector.cs).
-// The key ring is persisted to a fixed folder (not the default per-profile
-// location, which breaks under IIS app-pool identity changes/redeploys) —
-// BACK UP THIS FOLDER; losing it makes stored secrets permanently
-// undecryptable. DataProtection:KeysDirectory in appsettings/user-secrets/env
-// overrides the default location.
-// ---------------------------------------------------------------
-var dataProtectionKeysDir = builder.Configuration["DataProtection:KeysDirectory"]
-    ?? Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.CommonApplicationData), "SAPB1WebPortal", "DataProtection-Keys");
-builder.Services.AddDataProtection()
-    .PersistKeysToFileSystem(new DirectoryInfo(dataProtectionKeysDir))
-    .SetApplicationName("SAPB1WebPortal")
-    .ProtectKeysWithDpapi();
-
-// ---------------------------------------------------------------
 // Dependency injection
 // ---------------------------------------------------------------
-
-builder.Services.AddSingleton<ISecretProtector, DataProtectionSecretProtector>();
-
-// In-memory, zero-I/O cache of database-driven company configuration
-// (Administration → Server / Company Configuration). Consulted first by
-// CompanyRegistry/CompanyConnectionFactory/SapServiceLayerSessionManager below,
-// falling back to file/user-secrets configuration for any company not yet
-// migrated. See Interfaces/IServerConfigurationInterfaces.cs.
-builder.Services.AddSingleton<ICompanyConfigurationProvider, CompanyConfigurationProvider>();
 
 // Company allow-list + per-request company context/connection — see README
 // "Multi-company architecture" and the XML docs on each interface.
@@ -80,14 +56,28 @@ builder.Services.AddSingleton<ICompanyRegistry, CompanyRegistry>();
 builder.Services.AddScoped<ICompanyContext, CompanyContext>();
 builder.Services.AddScoped<ICompanyConnectionFactory, CompanyConnectionFactory>();
 
+// Database-driven Server/Company Configuration (Administration UI) — encrypts
+// stored SAP/SQL passwords at rest via the Data Protection API, and keeps
+// CompanyRegistry/CompanyConnectionFactory/SapServiceLayerSessionManager's
+// in-memory cache (ICompanyConfigurationProvider) warm from dbo.ServerConfigurations.
+// These were previously missing here, which broke company resolution entirely
+// (CompanyRegistry has a hard dependency on ICompanyConfigurationProvider).
+builder.Services.AddDataProtection()
+    .SetApplicationName("SAPB1WebPortal")
+    .PersistKeysToFileSystem(new DirectoryInfo(
+        builder.Configuration["DataProtection:KeysDirectory"]
+        ?? Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.CommonApplicationData), "SAPB1WebPortal", "DataProtection-Keys")));
+builder.Services.AddSingleton<ICompanyConfigurationProvider, CompanyConfigurationProvider>();
+builder.Services.AddSingleton<ISecretProtector, DataProtectionSecretProtector>();
+builder.Services.AddScoped<IAuditLogService, SqlAuditLogService>();
+builder.Services.AddScoped<IServerConfigurationService, SqlServerConfigurationService>();
+builder.Services.AddHostedService<ServerConfigurationCacheWarmupService>();
+
 // RBAC — the portal's own Users/Roles/Permissions database (SAPB1PortalAdmin),
 // completely separate from every SAP B1 company database. Global across
 // companies, not scoped by ICompanyContext (see Data/PortalConnectionFactory.cs).
 builder.Services.AddScoped<IPortalConnectionFactory, PortalConnectionFactory>();
 builder.Services.AddScoped<IAdminService, SqlAdminService>();
-builder.Services.AddScoped<IAuditLogService, SqlAuditLogService>();
-builder.Services.AddScoped<IServerConfigurationService, SqlServerConfigurationService>();
-builder.Services.AddHostedService<ServerConfigurationCacheWarmupService>();
 
 builder.Services.AddScoped<ISapB1Service, SqlSapB1Service>();
 builder.Services.AddScoped<IPurchaseService, SqlPurchaseService>();
@@ -261,6 +251,18 @@ if (app.Environment.IsDevelopment())
     app.UseSwagger();
     app.UseSwaggerUI(c => c.SwaggerEndpoint("/swagger/v1/swagger.json", "SAP B1 Web Portal API v1"));
 }
+
+// Cloud container hosts (Render, Railway, Azure Web App for Containers, Fly.io)
+// terminate HTTPS at their own edge and forward plain HTTP to this container;
+// without trusting their X-Forwarded-* headers, UseHttpsRedirection below would
+// see every request as HTTP and redirect it to HTTPS again, looping forever.
+// Also harmless/no-op for a bare `dotnet run` or an IIS reverse proxy setup.
+app.UseForwardedHeaders(new ForwardedHeadersOptions
+{
+    ForwardedHeaders = ForwardedHeaders.XForwardedFor | ForwardedHeaders.XForwardedProto,
+    KnownNetworks = { },
+    KnownProxies = { }
+});
 
 app.UseHttpsRedirection();
 app.UseCors("FrontendPolicy");
