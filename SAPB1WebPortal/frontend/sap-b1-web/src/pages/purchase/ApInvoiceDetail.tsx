@@ -5,6 +5,7 @@ import { getApInvoiceByEntry } from '../../api/purchase';
 export default function ApInvoiceDetail() {
   return (
     <PurchaseDocumentDetail
+      printType="ap-invoice"
       documentLabel="A/P Invoice"
       backLabel="Back to A/P Invoices"
       backRoute="/purchase/invoices"

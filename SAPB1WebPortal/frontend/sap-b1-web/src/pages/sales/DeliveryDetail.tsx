@@ -4,6 +4,7 @@ import { getDeliveryByEntry } from '../../api/sales';
 export default function DeliveryDetail() {
   return (
     <SalesDocumentDetail
+      printType="delivery"
       documentLabel="Delivery"
       backLabel="Back to Deliveries"
       backRoute="/sales/deliveries"

@@ -1,0 +1,8 @@
+is_global = true
+build_property.RootNamespace = SAPB1.PrintWorker
+build_property.ProjectDir = C:\Users\Administrator\Desktop\AITS\SAPB1WebPortal\SAPB1WebPortal\backend\SAPB1.PrintWorker\
+build_property.EnableComHosting = 
+build_property.EnableGeneratedComInterfaceComImportInterop = 
+build_property.CsWinRTUseWindowsUIXamlProjections = false
+build_property.EffectiveAnalysisLevelStyle = 
+build_property.EnableCodeStyleSeverity = 

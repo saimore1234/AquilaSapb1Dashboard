@@ -1,0 +1,15 @@
+C:\Users\Administrator\Desktop\AITS\SAPB1WebPortal\SAPB1WebPortal\backend\SAPB1.PrintWorker\bin\Release\net48\SAPB1.PrintWorker.exe.config
+C:\Users\Administrator\Desktop\AITS\SAPB1WebPortal\SAPB1WebPortal\backend\SAPB1.PrintWorker\bin\Release\net48\SAPB1.PrintWorker.exe
+C:\Users\Administrator\Desktop\AITS\SAPB1WebPortal\SAPB1WebPortal\backend\SAPB1.PrintWorker\bin\Release\net48\SAPB1.PrintWorker.pdb
+C:\Users\Administrator\Desktop\AITS\SAPB1WebPortal\SAPB1WebPortal\backend\SAPB1.PrintWorker\bin\Release\net48\CrystalDecisions.CrystalReports.Engine.dll
+C:\Users\Administrator\Desktop\AITS\SAPB1WebPortal\SAPB1WebPortal\backend\SAPB1.PrintWorker\bin\Release\net48\CrystalDecisions.ReportSource.dll
+C:\Users\Administrator\Desktop\AITS\SAPB1WebPortal\SAPB1WebPortal\backend\SAPB1.PrintWorker\bin\Release\net48\CrystalDecisions.Shared.dll
+C:\Users\Administrator\Desktop\AITS\SAPB1WebPortal\SAPB1WebPortal\backend\SAPB1.PrintWorker\obj\Release\net48\SAPB1.PrintWorker.csproj.AssemblyReference.cache
+C:\Users\Administrator\Desktop\AITS\SAPB1WebPortal\SAPB1WebPortal\backend\SAPB1.PrintWorker\obj\Release\net48\SAPB1.PrintWorker.GeneratedMSBuildEditorConfig.editorconfig
+C:\Users\Administrator\Desktop\AITS\SAPB1WebPortal\SAPB1WebPortal\backend\SAPB1.PrintWorker\obj\Release\net48\SAPB1.PrintWorker.AssemblyInfoInputs.cache
+C:\Users\Administrator\Desktop\AITS\SAPB1WebPortal\SAPB1WebPortal\backend\SAPB1.PrintWorker\obj\Release\net48\SAPB1.PrintWorker.AssemblyInfo.cs
+C:\Users\Administrator\Desktop\AITS\SAPB1WebPortal\SAPB1WebPortal\backend\SAPB1.PrintWorker\obj\Release\net48\SAPB1.PrintWorker.csproj.CoreCompileInputs.cache
+C:\Users\Administrator\Desktop\AITS\SAPB1WebPortal\SAPB1WebPortal\backend\SAPB1.PrintWorker\obj\Release\net48\SAPB1.PrintWorker.sourcelink.json
+C:\Users\Administrator\Desktop\AITS\SAPB1WebPortal\SAPB1WebPortal\backend\SAPB1.PrintWorker\obj\Release\net48\SAPB1.Pr.8350925D.Up2Date
+C:\Users\Administrator\Desktop\AITS\SAPB1WebPortal\SAPB1WebPortal\backend\SAPB1.PrintWorker\obj\Release\net48\SAPB1.PrintWorker.exe
+C:\Users\Administrator\Desktop\AITS\SAPB1WebPortal\SAPB1WebPortal\backend\SAPB1.PrintWorker\obj\Release\net48\SAPB1.PrintWorker.pdb

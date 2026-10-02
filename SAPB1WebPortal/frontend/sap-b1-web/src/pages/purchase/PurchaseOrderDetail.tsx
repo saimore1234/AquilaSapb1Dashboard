@@ -4,6 +4,7 @@ import { getPurchaseOrderByEntry } from '../../api/purchase';
 export default function PurchaseOrderDetail() {
   return (
     <PurchaseDocumentDetail
+      printType="purchase-order"
       documentLabel="Purchase Order"
       backLabel="Back to Purchase Orders"
       backRoute="/purchase/orders"

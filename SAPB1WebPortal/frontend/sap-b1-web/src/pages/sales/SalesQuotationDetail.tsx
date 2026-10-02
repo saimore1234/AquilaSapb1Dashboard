@@ -4,6 +4,7 @@ import { getSalesQuotationByEntry } from '../../api/sales';
 export default function SalesQuotationDetail() {
   return (
     <SalesDocumentDetail
+      printType="sales-quotation"
       documentLabel="Sales Quotation"
       backLabel="Back to Sales Quotations"
       backRoute="/sales/quotations"

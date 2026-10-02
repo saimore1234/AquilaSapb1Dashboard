@@ -13,6 +13,7 @@ function formatMoney(value: number, currency: string | null) {
 export default function ArInvoiceDetail() {
   return (
     <SalesDocumentDetail
+      printType="ar-invoice"
       documentLabel="A/R Invoice"
       backLabel="Back to A/R Invoices"
       backRoute="/sales/invoices"

@@ -4,6 +4,7 @@ import { getGrpoByEntry } from '../../api/purchase';
 export default function GrpoDetail() {
   return (
     <PurchaseDocumentDetail
+      printType="grpo"
       documentLabel="Goods Receipt PO"
       backLabel="Back to Goods Receipt PO"
       backRoute="/purchase/grpo"

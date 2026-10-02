@@ -4,6 +4,7 @@ import { getArCreditMemoByEntry } from '../../api/sales';
 export default function ArCreditMemoDetail() {
   return (
     <SalesDocumentDetail
+      printType="ar-credit-memo"
       documentLabel="A/R Credit Memo"
       backLabel="Back to A/R Credit Memos"
       backRoute="/sales/credit-memos"

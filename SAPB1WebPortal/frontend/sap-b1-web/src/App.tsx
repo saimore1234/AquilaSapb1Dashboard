@@ -120,6 +120,16 @@ export default function App() {
           }
         >
           <Route index element={<Dashboard />} />
+          {/* Shell-style aliases — existing routes above/below keep working unchanged. */}
+          <Route path="dashboard" element={<Dashboard />} />
+          <Route path="business-partners/customers" element={<Customers />} />
+          <Route path="business-partners/customers/:cardCode" element={<CustomerDetail />} />
+          <Route path="business-partners/suppliers" element={<Suppliers />} />
+          <Route path="business-partners/suppliers/:cardCode" element={<SupplierDetail />} />
+          <Route path="inventory/items" element={<Items />} />
+          <Route path="inventory/items/:itemCode" element={<ItemDetail />} />
+          <Route path="inventory/stock" element={<Inventory />} />
+          <Route path="finance/accounts" element={<ChartOfAccounts />} />
           <Route path="customers" element={<Customers />} />
           <Route path="customers/:cardCode" element={<CustomerDetail />} />
           <Route path="suppliers" element={<Suppliers />} />

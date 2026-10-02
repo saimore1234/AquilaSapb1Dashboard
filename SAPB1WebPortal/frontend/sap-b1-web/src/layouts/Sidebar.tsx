@@ -57,7 +57,7 @@ export default function Sidebar({ open, onClose, collapsed, onToggleCollapsed }:
           ${open ? 'translate-x-0' : '-translate-x-full'} lg:translate-x-0
           ${collapsed ? 'lg:w-[76px]' : 'lg:w-64'} w-64`}
       >
-        <div className={`h-16 flex items-center border-b border-white/10 shrink-0 ${isCollapsed ? 'justify-center px-0' : 'px-5'}`}>
+        <div className={`lg:hidden h-14 flex items-center border-b border-white/10 shrink-0 ${isCollapsed ? 'justify-center px-0' : 'px-5'}`}>
           <div className="h-8 w-8 rounded-lg bg-white/10 flex items-center justify-center font-bold text-sm shrink-0">B1</div>
           {!isCollapsed && <span className="ml-2.5 font-semibold text-[15px] truncate">Business Hub</span>}
         </div>

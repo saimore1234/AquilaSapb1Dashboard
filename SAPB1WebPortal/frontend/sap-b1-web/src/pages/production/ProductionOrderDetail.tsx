@@ -8,6 +8,7 @@ import { DetailSkeleton } from '../../components/ui/Skeleton';
 import QuantityProgress from '../../components/production/QuantityProgress';
 import AvailabilityBadge from '../../components/production/AvailabilityBadge';
 import ProductionFlow from '../../components/production/ProductionFlow';
+import PrintButton from '../../components/PrintButton';
 
 function formatDate(value: string | null) {
   if (!value) return '—';
@@ -63,7 +64,10 @@ export default function ProductionOrderDetail() {
             </h1>
             <p className="text-ink-tertiary text-sm mt-0.5">{order.itemCode}</p>
           </div>
-          <span className={statusBadgeClass(order.status)}>{order.status}</span>
+          <div className="flex items-center gap-2">
+            <PrintButton documentType="production-order" docEntry={docEntry} />
+            <span className={statusBadgeClass(order.status)}>{order.status}</span>
+          </div>
         </div>
 
         <div className="grid grid-cols-2 sm:grid-cols-3 gap-4 mt-6 text-sm">

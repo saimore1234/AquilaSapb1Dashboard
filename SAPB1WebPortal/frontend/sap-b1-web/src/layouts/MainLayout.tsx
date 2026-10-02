@@ -1,15 +1,29 @@
 import { useEffect, useState } from 'react';
-import { Outlet, useLocation } from 'react-router-dom';
+import { Outlet, useLocation, useNavigate } from 'react-router-dom';
 import { motion, AnimatePresence } from 'framer-motion';
 import Sidebar from './Sidebar';
-import Navbar from './Navbar';
 import MobileBottomNav from './MobileBottomNav';
 import CommandPalette from '../components/CommandPalette';
+import TopHeader from './shell/TopHeader';
+import ModuleBar from './shell/ModuleBar';
+import StatusBar from './shell/StatusBar';
+import ShellDialogs from './shell/ShellDialogs';
+import { ShellProvider, useShell } from './shell/ShellContext';
 
 const SIDEBAR_COLLAPSED_KEY = 'b1_sidebar_collapsed';
 
 export default function MainLayout() {
-  const [sidebarOpen, setSidebarOpen] = useState(false);
+  return (
+    <ShellProvider>
+      <Shell />
+    </ShellProvider>
+  );
+}
+
+function Shell() {
+  const shell = useShell();
+  const navigate = useNavigate();
+  const location = useLocation();
   const [collapsed, setCollapsed] = useState(() => {
     try {
       return localStorage.getItem(SIDEBAR_COLLAPSED_KEY) === '1';
@@ -17,8 +31,6 @@ export default function MainLayout() {
       return false;
     }
   });
-  const [commandOpen, setCommandOpen] = useState(false);
-  const location = useLocation();
 
   useEffect(() => {
     try {
@@ -28,29 +40,38 @@ export default function MainLayout() {
     }
   }, [collapsed]);
 
-  // Global Ctrl+K / Cmd+K to open the command palette from anywhere.
+  // Global shortcuts. Save/New/Print/Reload are deliberately left to the browser.
+  const { setSearchOpen, setModulesOpen, modulesOpen } = shell;
   useEffect(() => {
     function onKeyDown(e: KeyboardEvent) {
-      if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 'k') {
+      const key = e.key.toLowerCase();
+      if ((e.ctrlKey || e.metaKey) && (key === 'k' || key === 'f') && !e.shiftKey && !e.altKey) {
         e.preventDefault();
-        setCommandOpen(true);
+        setSearchOpen(true);
+      } else if (e.altKey && !e.ctrlKey && key === 'm') {
+        e.preventDefault();
+        setModulesOpen(!modulesOpen);
+      } else if (e.altKey && !e.ctrlKey && key === 'h') {
+        e.preventDefault();
+        navigate('/');
       }
     }
     document.addEventListener('keydown', onKeyDown);
     return () => document.removeEventListener('keydown', onKeyDown);
-  }, []);
+  }, [setSearchOpen, setModulesOpen, modulesOpen, navigate]);
 
   return (
-    <div className="flex h-screen overflow-hidden bg-bg">
-      <Sidebar
-        open={sidebarOpen}
-        onClose={() => setSidebarOpen(false)}
-        collapsed={collapsed}
-        onToggleCollapsed={() => setCollapsed((c) => !c)}
-      />
-      <div className="flex-1 flex flex-col min-w-0">
-        <Navbar onMenuClick={() => setSidebarOpen(true)} onSearchClick={() => setCommandOpen(true)} />
-        <main className="flex-1 overflow-y-auto p-4 sm:p-6 pb-20 lg:pb-6">
+    <div className="flex flex-col h-screen overflow-hidden bg-bg">
+      <TopHeader />
+      <ModuleBar />
+      <div className="flex flex-1 min-h-0">
+        <Sidebar
+          open={shell.sidebarOpen}
+          onClose={() => shell.setSidebarOpen(false)}
+          collapsed={collapsed}
+          onToggleCollapsed={() => setCollapsed((c) => !c)}
+        />
+        <main className="flex-1 min-w-0 overflow-y-auto p-4 sm:p-6 pb-20 lg:pb-6">
           <AnimatePresence mode="wait">
             <motion.div
               key={location.pathname}
@@ -62,10 +83,12 @@ export default function MainLayout() {
             </motion.div>
           </AnimatePresence>
         </main>
-        <MobileBottomNav />
       </div>
+      <StatusBar />
+      <MobileBottomNav />
 
-      <CommandPalette open={commandOpen} onClose={() => setCommandOpen(false)} />
+      <CommandPalette open={shell.searchOpen} onClose={() => shell.setSearchOpen(false)} />
+      <ShellDialogs />
     </div>
   );
 }

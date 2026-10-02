@@ -6,6 +6,7 @@ import type { IncomingPaymentDetail as IncomingPaymentDetailType } from '../../t
 import { ErrorState } from '../../components/StateViews';
 import { DetailSkeleton } from '../../components/ui/Skeleton';
 import StatCard from '../../components/StatCard';
+import PrintButton from '../../components/PrintButton';
 
 function formatDate(value: string | null) {
   if (!value) return '—';
@@ -51,7 +52,10 @@ export default function IncomingPaymentDetail() {
             </h1>
             <p className="text-ink-tertiary text-sm mt-0.5">{payment.customerCode}</p>
           </div>
-          <span className={payment.status === 'Completed' ? 'badge-success' : 'badge-danger'}>{payment.status}</span>
+          <div className="flex items-center gap-2">
+            <PrintButton documentType="incoming-payment" docEntry={docEntry} />
+            <span className={payment.status === 'Completed' ? 'badge-success' : 'badge-danger'}>{payment.status}</span>
+          </div>
         </div>
 
         <div className="grid grid-cols-2 sm:grid-cols-3 gap-4 mt-6 text-sm">

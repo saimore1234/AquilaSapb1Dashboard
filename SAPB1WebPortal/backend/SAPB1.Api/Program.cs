@@ -85,6 +85,7 @@ builder.Services.AddScoped<ISalesService, SqlSalesService>();
 builder.Services.AddScoped<IProductionService, SqlProductionService>();
 builder.Services.AddScoped<IFinanceService, SqlFinanceService>();
 builder.Services.AddScoped<IReportsService, SqlReportsService>();
+builder.Services.AddScoped<ISapB1PrintService, SapB1PrintService>();
 
 // ---------------------------------------------------------------
 // SAP B1 Service Layer authentication — implemented (SapServiceLayerAuthenticator)

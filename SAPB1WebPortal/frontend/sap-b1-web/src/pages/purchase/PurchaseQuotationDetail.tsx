@@ -4,6 +4,7 @@ import { getPurchaseQuotationByEntry } from '../../api/purchase';
 export default function PurchaseQuotationDetail() {
   return (
     <PurchaseDocumentDetail
+      printType="purchase-quotation"
       documentLabel="Purchase Quotation"
       backLabel="Back to Purchase Quotations"
       backRoute="/purchase/quotations"

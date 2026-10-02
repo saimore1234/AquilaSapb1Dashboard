@@ -37,6 +37,8 @@ interface ExtraStatCard {
 
 interface SalesDocumentDetailProps<T extends DetailBase> {
   documentLabel: string;
+  /** Enables the SAP B1 Print button (see api/print.ts). */
+  printType?: PrintDocumentType;
   backLabel: string;
   backRoute: string;
   fetchFn: (docEntry: number) => Promise<T>;
@@ -65,8 +67,12 @@ function formatMoney(value: number, currency: string | null) {
  * document layout) but wired to the /sales/* route tree and Sales document
  * lines, which additionally carry Ordered/Delivered quantities on Orders and
  * Deliveries. */
+import PrintButton from '../PrintButton';
+import type { PrintDocumentType } from '../../api/print';
+
 export default function SalesDocumentDetail<T extends DetailBase>({
   documentLabel,
+  printType,
   backLabel,
   backRoute,
   fetchFn,
@@ -116,7 +122,10 @@ export default function SalesDocumentDetail<T extends DetailBase>({
             </h1>
             {subtitle?.(doc) && <p className="text-ink-tertiary text-sm mt-0.5">{subtitle(doc)}</p>}
           </div>
-          <span className={statusBadgeClass}>{doc.status}</span>
+          <div className="flex items-center gap-2">
+            {printType && <PrintButton documentType={printType} docEntry={doc.docEntry} />}
+            <span className={statusBadgeClass}>{doc.status}</span>
+          </div>
         </div>
 
         <div className="grid grid-cols-2 sm:grid-cols-3 gap-4 mt-6 text-sm">

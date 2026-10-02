@@ -4,6 +4,7 @@ import { getSalesOrderByEntry } from '../../api/sales';
 export default function SalesOrderDetail() {
   return (
     <SalesDocumentDetail
+      printType="sales-order"
       documentLabel="Sales Order"
       backLabel="Back to Sales Orders"
       backRoute="/sales/orders"

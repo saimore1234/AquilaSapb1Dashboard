@@ -25,7 +25,7 @@ apiClient.interceptors.response.use(
       localStorage.removeItem('sapb1_token');
       localStorage.removeItem('sapb1_user');
       if (window.location.pathname !== '/login') {
-        window.location.href = '/login';
+        window.location.href = '/login?reason=expired';
       }
     }
     return Promise.reject(error);

@@ -4,6 +4,7 @@ import { getPurchaseRequestByEntry } from '../../api/purchase';
 export default function PurchaseRequestDetail() {
   return (
     <PurchaseDocumentDetail
+      printType="purchase-request"
       documentLabel="Purchase Request"
       backLabel="Back to Purchase Requests"
       backRoute="/purchase/requests"
