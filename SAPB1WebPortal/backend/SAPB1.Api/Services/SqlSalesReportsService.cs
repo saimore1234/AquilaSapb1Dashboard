@@ -14,10 +14,14 @@ namespace SAPB1.Api.Services;
 public class SqlSalesReportsService : ISalesReportsService
 {
     private readonly ICompanyConnectionFactory _connectionFactory;
+    private readonly ICompanyContext _company;
+    private readonly IConfiguration _config;
 
-    public SqlSalesReportsService(ICompanyConnectionFactory connectionFactory)
+    public SqlSalesReportsService(ICompanyConnectionFactory connectionFactory, ICompanyContext company, IConfiguration config)
     {
         _connectionFactory = connectionFactory;
+        _company = company;
+        _config = config;
     }
 
     private static DateTime FyStart(DateTime today) => new(today.Month >= 4 ? today.Year : today.Year - 1, 4, 1);
@@ -43,9 +47,9 @@ public class SqlSalesReportsService : ISalesReportsService
         // Whether an invoice was raised from a delivery (BaseType 15) — the only
         // dispatch signal standard SAP holds. LR/transporter/e-Way data is not
         // in standard tables, so it is deliberately not reported here.
-        const string cte = @"
+        var cte = $@"
             WITH inv AS (
-                SELECT h.DocEntry, h.DocNum, h.DocDate, h.CardCode, h.CardName, h.DocTotal, h.DocStatus,
+                SELECT h.DocEntry, h.DocNum, h.DocDate, h.CardCode, h.CardName, {SalesAmount.Header(q.IncludeTax, "h")} AS Amt, h.DocStatus,
                        CASE WHEN EXISTS (SELECT 1 FROM INV1 l WHERE l.DocEntry = h.DocEntry AND l.BaseType = 15)
                             THEN 1 ELSE 0 END AS FromDelivery
                 FROM OINV h
@@ -56,10 +60,10 @@ public class SqlSalesReportsService : ISalesReportsService
         const string filter = " WHERE (@Delivery IS NULL OR FromDelivery = @Delivery)";
 
         var totals = await db.QuerySingleAsync(new CommandDefinition(
-            cte + " SELECT COUNT(*) AS Cnt, ISNULL(SUM(DocTotal), 0) AS Total FROM inv" + filter, p, cancellationToken: ct));
+            cte + " SELECT COUNT(*) AS Cnt, ISNULL(SUM(Amt), 0) AS Total FROM inv" + filter, p, cancellationToken: ct));
 
         var rows = (await db.QueryAsync(new CommandDefinition(cte + @"
-            SELECT i.DocEntry, i.DocNum, i.DocDate, i.CardCode, i.CardName, i.DocTotal, i.DocStatus, i.FromDelivery,
+            SELECT i.DocEntry, i.DocNum, i.DocDate, i.CardCode, i.CardName, i.Amt, i.DocStatus, i.FromDelivery,
                    (SELECT TOP 1 l.Dscription FROM INV1 l WHERE l.DocEntry = i.DocEntry ORDER BY l.LineNum) AS Item,
                    (SELECT TOP 1 l.unitMsr FROM INV1 l WHERE l.DocEntry = i.DocEntry ORDER BY l.LineNum) AS Uom,
                    (SELECT COUNT(*) FROM INV1 l WHERE l.DocEntry = i.DocEntry) AS LineCount,
@@ -80,7 +84,7 @@ public class SqlSalesReportsService : ISalesReportsService
                 CustomerCode = r.CardCode, CustomerName = r.CardName,
                 Item = r.Item, Uom = r.Uom, LineCount = r.LineCount, Quantity = qty,
                 Rate = qty > 0 ? Math.Round(net / (decimal)qty, 2) : 0,
-                Value = r.DocTotal,
+                Value = r.Amt,
                 DispatchStatus = r.FromDelivery == 1 ? "Against Delivery" : "Direct Invoice",
                 Status = r.DocStatus == "O" ? "Open" : "Closed"
             });
@@ -263,14 +267,15 @@ public class SqlSalesReportsService : ISalesReportsService
               AND (@Customer IS NULL OR h.CardCode = @Customer)
               AND (@SalesPerson IS NULL OR h.SlpCode = @SalesPerson)
               AND (@Item IS NULL OR l.ItemCode = @Item)";
+        var lineAmt = SalesAmount.Line(q.IncludeTax, "l");
         const string cur = "h.DocDate >= @From AND h.DocDate <= @To";
         const string prev = "h.DocDate >= @PFrom AND h.DocDate <= @PTo";
 
         var kpi = await db.QuerySingleAsync(new CommandDefinition($@"
             SELECT ISNULL(SUM(CASE WHEN {cur} THEN l.Quantity END), 0) AS Qty,
-                   ISNULL(SUM(CASE WHEN {cur} THEN l.LineTotal END), 0) AS Val,
+                   ISNULL(SUM(CASE WHEN {cur} THEN {lineAmt} END), 0) AS Val,
                    ISNULL(SUM(CASE WHEN {prev} THEN l.Quantity END), 0) AS PQty,
-                   ISNULL(SUM(CASE WHEN {prev} THEN l.LineTotal END), 0) AS PVal
+                   ISNULL(SUM(CASE WHEN {prev} THEN {lineAmt} END), 0) AS PVal
             {from_}", p, cancellationToken: ct));
 
         var dto = new SalesAnalyticsReportDto
@@ -283,27 +288,27 @@ public class SqlSalesReportsService : ISalesReportsService
         dto.PreviousAverageRate = dto.PreviousQuantity > 0 ? Math.Round(dto.PreviousValue / (decimal)dto.PreviousQuantity, 2) : 0;
 
         dto.Trend = (await db.QueryAsync<AnalyticsPointDto>(new CommandDefinition($@"
-            SELECT CONVERT(varchar(7), h.DocDate, 120) AS Label, SUM(l.LineTotal) AS Value, SUM(l.Quantity) AS Quantity
+            SELECT CONVERT(varchar(7), h.DocDate, 120) AS Label, SUM({lineAmt}) AS Value, SUM(l.Quantity) AS Quantity
             {from_} AND {cur}
             GROUP BY CONVERT(varchar(7), h.DocDate, 120) ORDER BY 1", p, cancellationToken: ct))).ToList();
 
         dto.Customers = (await db.QueryAsync<AnalyticsComparisonDto>(new CommandDefinition($@"
             SELECT TOP 5 h.CardCode AS [Key], MAX(h.CardName) AS Name,
-                   ISNULL(SUM(CASE WHEN {cur} THEN l.LineTotal END), 0) AS Value,
-                   ISNULL(SUM(CASE WHEN {prev} THEN l.LineTotal END), 0) AS PreviousValue
+                   ISNULL(SUM(CASE WHEN {cur} THEN {lineAmt} END), 0) AS Value,
+                   ISNULL(SUM(CASE WHEN {prev} THEN {lineAmt} END), 0) AS PreviousValue
             {from_}
             GROUP BY h.CardCode
-            HAVING SUM(CASE WHEN {cur} THEN l.LineTotal END) > 0
-            ORDER BY SUM(CASE WHEN {cur} THEN l.LineTotal END) DESC", p, cancellationToken: ct))).ToList();
+            HAVING SUM(CASE WHEN {cur} THEN {lineAmt} END) > 0
+            ORDER BY SUM(CASE WHEN {cur} THEN {lineAmt} END) DESC", p, cancellationToken: ct))).ToList();
 
         dto.Items = (await db.QueryAsync<AnalyticsComparisonDto>(new CommandDefinition($@"
             SELECT TOP 5 l.ItemCode AS [Key], MAX(l.Dscription) AS Name,
-                   ISNULL(SUM(CASE WHEN {cur} THEN l.LineTotal END), 0) AS Value,
-                   ISNULL(SUM(CASE WHEN {prev} THEN l.LineTotal END), 0) AS PreviousValue
+                   ISNULL(SUM(CASE WHEN {cur} THEN {lineAmt} END), 0) AS Value,
+                   ISNULL(SUM(CASE WHEN {prev} THEN {lineAmt} END), 0) AS PreviousValue
             {from_} AND l.ItemCode IS NOT NULL
             GROUP BY l.ItemCode
-            HAVING SUM(CASE WHEN {cur} THEN l.LineTotal END) > 0
-            ORDER BY SUM(CASE WHEN {cur} THEN l.LineTotal END) DESC", p, cancellationToken: ct))).ToList();
+            HAVING SUM(CASE WHEN {cur} THEN {lineAmt} END) > 0
+            ORDER BY SUM(CASE WHEN {cur} THEN {lineAmt} END) DESC", p, cancellationToken: ct))).ToList();
 
         return dto;
     }
@@ -328,20 +333,38 @@ public class SqlSalesReportsService : ISalesReportsService
         p.Add("From", from);
         p.Add("To", to);
         p.Add("Group", q.CustomerGroup);
-        p.Add("Location", q.Location);
+        // Locations ("Units"): the full list drives the filter; with no explicit selection every location
+        // is included except those this company configured as default-excluded
+        // (SalesTurnover:DefaultExcludedLocations:<companyCode> = location names, matched ignoring case/spaces).
+        var allLocations = (await db.QueryAsync<TurnoverOptionDto>(new CommandDefinition(
+            "SELECT Code, Location AS Name FROM OLCT ORDER BY Location", cancellationToken: ct))).ToList();
+        static string Norm(string? v) => new string((v ?? "").Where(c => !char.IsWhiteSpace(c)).ToArray()).ToLowerInvariant();
+        var excludedNames = (_config.GetSection($"SalesTurnover:DefaultExcludedLocations:{_company.CompanyCode}").Get<string[]>() ?? Array.Empty<string>())
+            .Select(Norm).ToHashSet();
+        foreach (var l in allLocations) l.IsDefaultExcluded = excludedNames.Contains(Norm(l.Name));
+        var explicitLocations = q.Locations is { Length: > 0 };
+        int[]? locations = explicitLocations
+            ? q.Locations
+            : allLocations.Any(l => l.IsDefaultExcluded) ? allLocations.Where(l => !l.IsDefaultExcluded).Select(l => l.Code).ToArray() : null;
+        if (locations is { Length: 0 }) locations = new[] { int.MinValue }; // every location excluded -> match nothing
+        p.Add("Locations", locations ?? new[] { int.MinValue }); // never expanded to empty; HasLocations gates it
+        p.Add("HasLocations", locations is null ? 0 : 1);
+        p.Add("KeepNoLocation", explicitLocations ? 0 : 1); // default view keeps lines that have no location
         p.Add("Branch", q.Branch);
         p.Add("Unassigned", "(Not assigned)");
 
-        const string sql = @"
-            WITH alloc AS (
-                SELECT h.BPLId, c.GroupCode, l.LocCode,
-                       CASE WHEN SUM(l.GTotal) OVER (PARTITION BY l.DocEntry) <> 0
-                            THEN h.DocTotal * l.GTotal / SUM(l.GTotal) OVER (PARTITION BY l.DocEntry)
-                            ELSE h.DocTotal / COUNT(*) OVER (PARTITION BY l.DocEntry) END AS Amt
+        // Standard basis: invoice header amount spread over lines (Include Tax switch). Client basis: lines minus credit memos.
+        var allocRows = q.NetOfCreditNotes
+            ? SalesAmount.NetOfCreditNotesRows(q.IncludeTax)
+            : $@"SELECT h.BPLId, c.GroupCode, l.LocCode,
+                       {SalesAmount.AllocatedToLine(q.IncludeTax)} AS Amt
                 FROM OINV h
                 JOIN INV1 l ON l.DocEntry = h.DocEntry
                 LEFT JOIN OCRD c ON c.CardCode = h.CardCode
-                WHERE h.CANCELED = 'N' AND h.DocDate >= @From AND h.DocDate <= @To
+                WHERE h.CANCELED = 'N' AND h.DocDate >= @From AND h.DocDate <= @To";
+        var sql = $@"
+            WITH alloc AS (
+                {allocRows}
             )
             SELECT ISNULL(g.GroupName, @Unassigned) AS CustomerGroup,
                    ISNULL(lc.Location, @Unassigned) AS Location,
@@ -352,14 +375,13 @@ public class SqlSalesReportsService : ISalesReportsService
             LEFT JOIN OLCT lc ON lc.Code = a.LocCode
             LEFT JOIN OBPL b ON b.BPLId = a.BPLId
             WHERE (@Group IS NULL OR a.GroupCode = @Group)
-              AND (@Location IS NULL OR a.LocCode = @Location)
+              AND (@HasLocations = 0 OR a.LocCode IN @Locations OR (@KeepNoLocation = 1 AND a.LocCode IS NULL))
               AND (@Branch IS NULL OR a.BPLId = @Branch)
             GROUP BY ISNULL(g.GroupName, @Unassigned), ISNULL(lc.Location, @Unassigned), ISNULL(b.BPLName, @Unassigned)
             HAVING SUM(a.Amt) <> 0
             ORDER BY SUM(a.Amt) DESC;
 
             SELECT GroupCode AS Code, GroupName AS Name FROM OCRG WHERE GroupType = 'C' ORDER BY GroupName;
-            SELECT Code, Location AS Name FROM OLCT ORDER BY Location;
             SELECT BPLId AS Code, BPLName AS Name FROM OBPL ORDER BY BPLName;";
 
         using var multi = await db.QueryMultipleAsync(new CommandDefinition(sql, p, cancellationToken: ct));
@@ -367,10 +389,10 @@ public class SqlSalesReportsService : ISalesReportsService
 
         var dto = new TurnoverBreakupDto
         {
-            DateFrom = from, DateTo = to,
+            DateFrom = from, DateTo = to, NetOfCreditNotes = q.NetOfCreditNotes,
             GroupLocationBranchSales = rows,
             CustomerGroups = (await multi.ReadAsync<TurnoverOptionDto>()).ToList(),
-            Locations = (await multi.ReadAsync<TurnoverOptionDto>()).ToList(),
+            Locations = allLocations,
             Branches = (await multi.ReadAsync<TurnoverOptionDto>()).ToList()
         };
 

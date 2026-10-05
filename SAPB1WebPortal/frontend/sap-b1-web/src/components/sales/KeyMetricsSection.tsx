@@ -10,7 +10,7 @@ export default function KeyMetricsSection({ reportTo }: { reportTo?: string }) {
   if (error) return <div className="card"><ErrorState message={error} onRetry={reload} /></div>;
   return (
   <section aria-labelledby="kpi-h" className="space-y-3">
-    <SectionHeading id="kpi-h" title="Key Metrics" reportTo={reportTo} />
+    <SectionHeading id="kpi-h" title="Key Metrics" note="current position, not period-based" reportTo={reportTo} />
     {loading || !data ? (
       <CardGridSkeleton count={4} />
     ) : (

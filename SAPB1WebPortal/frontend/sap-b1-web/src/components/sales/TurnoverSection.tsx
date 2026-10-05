@@ -5,8 +5,9 @@ import type { TurnoverBreakup } from '../../types';
 import { ErrorState } from '../StateViews';
 import { Skeleton } from '../ui/Skeleton';
 import { RANK_COLORS, SectionHeading, formatDate } from './salesShared';
-import { downloadCsv, fyStartDate, toIsoDate } from './salesUtils';
+import { downloadCsv } from './salesUtils';
 import { useSalesRefresh } from './salesRefresh';
+import { taxLabel, useSalesFilters } from './salesFilters';
 import { usePermissions } from '../../permissions/usePermissions';
 
 const money = new Intl.NumberFormat('en-IN', { style: 'currency', currency: 'INR', minimumFractionDigits: 2, maximumFractionDigits: 2 });
@@ -18,10 +19,13 @@ const money = new Intl.NumberFormat('en-IN', { style: 'currency', currency: 'INR
  */
 export default function TurnoverSection({ reportTo }: { reportTo?: string }) {
   const { canExport } = usePermissions();
-  const [from, setFrom] = useState(() => toIsoDate(fyStartDate()));
-  const [to, setTo] = useState(() => toIsoDate(new Date()));
+  const { applied } = useSalesFilters();
+  const { from, to, includeTax } = applied;
   const [group, setGroup] = useState('');
-  const [location, setLocation] = useState('');
+  // null = the company's default selection (all locations except default-excluded ones); an array = the user's own choice.
+  const [locations, setLocations] = useState<number[] | null>(null);
+  // Default on: invoice lines minus credit memos, header discount deducted (the client's turnover report basis).
+  const [clientBasis, setClientBasis] = useState(true);
   const [branch, setBranch] = useState('');
   const [showDetail, setShowDetail] = useState(false);
   const [reload, setReload] = useState(0);
@@ -39,8 +43,10 @@ export default function TurnoverSection({ reportTo }: { reportTo?: string }) {
     getTurnoverBreakup({
       dateFrom: from,
       dateTo: to,
+      includeTax,
       customerGroup: group ? Number(group) : undefined,
-      location: location ? Number(location) : undefined,
+      locations: locations ?? undefined,
+      netOfCreditNotes: clientBasis || undefined,
       branch: branch ? Number(branch) : undefined
     })
       .then((d) => {
@@ -50,16 +56,39 @@ export default function TurnoverSection({ reportTo }: { reportTo?: string }) {
       .catch((err) => setError(err?.response?.data?.message || err.message || 'Unable to load turnover.'))
       .finally(() => setLoading(false));
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [from, to, group, location, branch, reload, tick]);
+  }, [from, to, includeTax, group, locations, clientBasis, branch, reload, tick]);
 
   const maxGroup = useMemo(() => Math.max(1, ...(data?.customerGroupSales ?? []).map((g) => g.salesValue)), [data]);
+  const allLocationCodes = (data?.locations ?? []).map((o) => o.code);
+  const effectiveLocations = locations ?? (data?.locations ?? []).filter((o) => !o.isDefaultExcluded).map((o) => o.code);
+  const locationLabel =
+    !data || effectiveLocations.length === allLocationCodes.length
+      ? 'Location: All'
+      : `Location: ${effectiveLocations.length} of ${allLocationCodes.length}`;
+
+  // Unit (location) x customer-group matrix, summed from the already-aggregated breakup rows.
+  const unitMatrix = useMemo(() => {
+    const groups = (data?.customerGroupSales ?? []).map((g) => g.customerGroup);
+    const byUnit = new Map<string, Record<string, number>>();
+    const groupTotals: Record<string, number> = {};
+    for (const r of data?.groupLocationBranchSales ?? []) {
+      const cell = byUnit.get(r.location) ?? {};
+      cell[r.customerGroup] = (cell[r.customerGroup] ?? 0) + r.salesValue;
+      byUnit.set(r.location, cell);
+      groupTotals[r.customerGroup] = (groupTotals[r.customerGroup] ?? 0) + r.salesValue;
+    }
+    const rows = [...byUnit.entries()]
+      .map(([unit, byGroup]) => ({ unit, byGroup, total: Object.values(byGroup).reduce((a, b) => a + b, 0) }))
+      .sort((a, b) => b.total - a.total);
+    return { groups, rows, groupTotals };
+  }, [data]);
   const input = 'px-3 py-2 text-sm rounded-lg border border-border-strong bg-surface text-ink-primary';
   const empty = !loading && !error && data && data.groupLocationBranchSales.length === 0;
 
   function exportCsv() {
     if (!data) return;
     downloadCsv(
-      `turnover-breakup-${from}-to-${to}.csv`,
+      `turnover-breakup-${from}-to-${to}-${includeTax ? 'incl' : 'excl'}-tax${clientBasis ? '-net-of-credit-notes' : ''}.csv`,
       ['Customer Group', 'Location', 'Branch', 'Sales Value', 'Percentage'],
       data.groupLocationBranchSales.map((r) => [r.customerGroup, r.location, r.branch, r.salesValue, r.percentage])
     );
@@ -70,17 +99,36 @@ export default function TurnoverSection({ reportTo }: { reportTo?: string }) {
       <SectionHeading id="to-h" title="Total Turnover" note={data ? <>{formatDate(data.dateFrom)} – {formatDate(data.dateTo)}</> : undefined} reportTo={reportTo} />
 
       <div className="card flex flex-wrap items-center gap-2">
-        <input type="date" value={from} max={to} onChange={(e) => setFrom(e.target.value)} aria-label="Date from" className={input} />
-        <span className="text-ink-tertiary text-sm">to</span>
-        <input type="date" value={to} min={from} onChange={(e) => setTo(e.target.value)} aria-label="Date to" className={input} />
         <select value={group} onChange={(e) => setGroup(e.target.value)} aria-label="Customer group" className={input}>
           <option value="">Customer Group: All</option>
           {data?.customerGroups.map((o) => <option key={o.code} value={o.code}>{o.name}</option>)}
         </select>
-        <select value={location} onChange={(e) => setLocation(e.target.value)} aria-label="Location" className={input}>
-          <option value="">Location: All</option>
-          {data?.locations.map((o) => <option key={o.code} value={o.code}>{o.name}</option>)}
-        </select>
+        <details className="relative">
+          <summary className={`${input} cursor-pointer select-none list-none`} aria-label="Locations (units)">
+            {locationLabel}
+          </summary>
+          <div className="absolute z-20 mt-1 min-w-[12rem] max-h-64 overflow-auto rounded-lg border border-border-strong bg-surface shadow-elevated p-2 space-y-1">
+            {data?.locations.map((o) => (
+              <label key={o.code} className="flex items-center gap-2 px-1 py-0.5 text-sm text-ink-primary cursor-pointer">
+                <input
+                  type="checkbox"
+                  className="h-4 w-4 accent-brand-600"
+                  checked={effectiveLocations.includes(o.code)}
+                  onChange={(e) => setLocations(e.target.checked ? [...effectiveLocations, o.code] : effectiveLocations.filter((c) => c !== o.code))}
+                />
+                {o.name}
+              </label>
+            ))}
+            <div className="flex gap-3 px-1 pt-1">
+              <button type="button" className="text-xs text-brand-600 dark:text-brand-400" onClick={() => setLocations(allLocationCodes)}>Select all</button>
+              <button type="button" className="text-xs text-brand-600 dark:text-brand-400" onClick={() => setLocations(null)}>Default</button>
+            </div>
+          </div>
+        </details>
+        <label className="inline-flex items-center gap-2 text-sm text-ink-primary cursor-pointer select-none" title="Invoice lines minus credit memos, header discount deducted, no freight or rounding">
+          <input type="checkbox" className="h-4 w-4 accent-brand-600" checked={clientBasis} onChange={(e) => setClientBasis(e.target.checked)} />
+          Net of credit notes
+        </label>
         <select value={branch} onChange={(e) => setBranch(e.target.value)} aria-label="Branch" className={input}>
           <option value="">Branch: All</option>
           {data?.branches.map((o) => <option key={o.code} value={o.code}>{o.name}</option>)}
@@ -103,7 +151,9 @@ export default function TurnoverSection({ reportTo }: { reportTo?: string }) {
             ) : (
               <p className="text-3xl sm:text-4xl font-semibold text-ink-primary tabular-nums mt-1">{money.format(data.totalTurnover)}</p>
             )}
-            <p className="text-sm text-ink-secondary mt-1">Sales for selected period (A/R invoices incl. GST, excluding cancelled)</p>
+            <p className="text-sm text-ink-secondary mt-1">{clientBasis
+                ? `Net sales for the selected period: invoice lines minus credit memos, header discount deducted, no freight/rounding (${taxLabel(includeTax)})`
+                : `Sales for the selected period (A/R invoices ${taxLabel(includeTax)}, excluding cancelled)`}</p>
           </div>
 
           <div className="card">
@@ -153,6 +203,37 @@ export default function TurnoverSection({ reportTo }: { reportTo?: string }) {
               </>
             )}
           </div>
+
+          {!loading && data && !empty && (
+            <div className="card">
+              <h3 className="font-semibold text-ink-primary mb-3">Unit-wise Sales <span className="text-ink-tertiary font-normal text-xs">(by invoice line location)</span></h3>
+              <div className="overflow-x-auto">
+                <table className="w-full text-sm">
+                  <thead>
+                    <tr className="text-left text-xs uppercase tracking-wide text-ink-tertiary border-b border-border">
+                      <th className="px-4 py-2.5 font-medium">Unit</th>
+                      {unitMatrix.groups.map((g) => <th key={g} className="px-4 py-2.5 font-medium text-right">{g}</th>)}
+                      <th className="px-4 py-2.5 font-medium text-right">Total</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {unitMatrix.rows.map((r) => (
+                      <tr key={r.unit} className="border-b border-border last:border-0">
+                        <td className="px-4 py-2.5">{r.unit}</td>
+                        {unitMatrix.groups.map((g) => <td key={g} className="px-4 py-2.5 text-right tabular-nums">{r.byGroup[g] ? money.format(r.byGroup[g]) : '—'}</td>)}
+                        <td className="px-4 py-2.5 text-right tabular-nums font-medium">{money.format(r.total)}</td>
+                      </tr>
+                    ))}
+                    <tr className="border-t border-border-strong font-semibold">
+                      <td className="px-4 py-2.5">Total</td>
+                      {unitMatrix.groups.map((g) => <td key={g} className="px-4 py-2.5 text-right tabular-nums">{money.format(unitMatrix.groupTotals[g] ?? 0)}</td>)}
+                      <td className="px-4 py-2.5 text-right tabular-nums">{money.format(data.totalTurnover)}</td>
+                    </tr>
+                  </tbody>
+                </table>
+              </div>
+            </div>
+          )}
 
           <div className="card p-0 overflow-hidden">
             <button

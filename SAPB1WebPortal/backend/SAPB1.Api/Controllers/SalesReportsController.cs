@@ -23,7 +23,10 @@ public class SalesReportsController : ControllerBase
 
     [HttpGet("invoice-register")]
     public async Task<ActionResult<ApiResponse<InvoiceRegisterDto>>> GetInvoiceRegister([FromQuery] InvoiceRegisterQuery query, CancellationToken ct)
-        => Ok(ApiResponse<InvoiceRegisterDto>.Ok(await _reports.GetInvoiceRegisterAsync(query, ct)));
+    {
+        if (InvalidRange(query.DateFrom, query.DateTo)) return BadRequest(ApiResponse<InvoiceRegisterDto>.Fail("From Date must be on or before To Date."));
+        return Ok(ApiResponse<InvoiceRegisterDto>.Ok(await _reports.GetInvoiceRegisterAsync(query, ct)));
+    }
 
     [HttpGet("customer-outstanding")]
     public async Task<ActionResult<ApiResponse<CustomerOutstandingDto>>> GetCustomerOutstanding(CancellationToken ct)
@@ -39,6 +42,7 @@ public class SalesReportsController : ControllerBase
     {
         if (string.IsNullOrWhiteSpace(customer))
             return BadRequest(ApiResponse<CustomerLedgerDto>.Fail("A customer code is required."));
+        if (InvalidRange(dateFrom, dateTo)) return BadRequest(ApiResponse<CustomerLedgerDto>.Fail("From Date must be on or before To Date."));
         var result = await _reports.GetCustomerLedgerAsync(customer, dateFrom, dateTo, ct);
         return result is null
             ? NotFound(ApiResponse<CustomerLedgerDto>.Fail("Customer not found."))
@@ -51,9 +55,18 @@ public class SalesReportsController : ControllerBase
 
     [HttpGet("analytics")]
     public async Task<ActionResult<ApiResponse<SalesAnalyticsReportDto>>> GetAnalytics([FromQuery] SalesAnalyticsQuery query, CancellationToken ct)
-        => Ok(ApiResponse<SalesAnalyticsReportDto>.Ok(await _reports.GetSalesAnalyticsAsync(query, ct)));
+    {
+        if (InvalidRange(query.DateFrom, query.DateTo)) return BadRequest(ApiResponse<SalesAnalyticsReportDto>.Fail("From Date must be on or before To Date."));
+        return Ok(ApiResponse<SalesAnalyticsReportDto>.Ok(await _reports.GetSalesAnalyticsAsync(query, ct)));
+    }
 
     [HttpGet("turnover-breakup")]
     public async Task<ActionResult<ApiResponse<TurnoverBreakupDto>>> GetTurnoverBreakup([FromQuery] TurnoverQuery query, CancellationToken ct)
-        => Ok(ApiResponse<TurnoverBreakupDto>.Ok(await _reports.GetTurnoverBreakupAsync(query, ct)));
+    {
+        if (InvalidRange(query.DateFrom, query.DateTo)) return BadRequest(ApiResponse<TurnoverBreakupDto>.Fail("From Date must be on or before To Date."));
+        return Ok(ApiResponse<TurnoverBreakupDto>.Ok(await _reports.GetTurnoverBreakupAsync(query, ct)));
+    }
+
+    private static bool InvalidRange(DateTime? from, DateTime? to) =>
+        from.HasValue && to.HasValue && from.Value.Date > to.Value.Date;
 }

@@ -14,6 +14,10 @@ import {
   RefreshBar,
   SalesRefreshProvider,
 } from "../../../components/sales/salesRefresh";
+import {
+  GlobalSalesFilterBar,
+  SalesFilterProvider,
+} from "../../../components/sales/salesFilters";
 
 /** The standalone (full-size) rendering of each report; the dashboard uses the same components. */
 const reportBodies: Record<string, () => ReactElement> = {
@@ -80,6 +84,7 @@ export function SalesReportPage() {
 
   return (
     <SalesRefreshProvider>
+      <SalesFilterProvider>
       <div className="space-y-4">
         <Link
           to={SALES_REPORTS_PATH}
@@ -99,8 +104,10 @@ export function SalesReportPage() {
           </div>
           <RefreshBar />
         </div>
+        <GlobalSalesFilterBar />
         <Body />
       </div>
+      </SalesFilterProvider>
     </SalesRefreshProvider>
   );
 }

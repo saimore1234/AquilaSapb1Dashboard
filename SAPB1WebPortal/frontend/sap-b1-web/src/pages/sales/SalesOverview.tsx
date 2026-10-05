@@ -16,6 +16,11 @@ import {
   RefreshBar,
   SalesRefreshProvider,
 } from "../../components/sales/salesRefresh";
+import {
+  GlobalSalesFilterBar,
+  SalesFilterProvider,
+  useSalesFilters,
+} from "../../components/sales/salesFilters";
 import { SALES_REPORTS_PATH, salesReportPath } from "../../data/salesReports";
 
 /**
@@ -25,13 +30,16 @@ import { SALES_REPORTS_PATH, salesReportPath } from "../../data/salesReports";
 export default function SalesOverview() {
   return (
     <SalesRefreshProvider>
-      <Dashboard />
+      <SalesFilterProvider>
+        <Dashboard />
+      </SalesFilterProvider>
     </SalesRefreshProvider>
   );
 }
 
 function Dashboard() {
   const { data } = useSalesOverview();
+  const { applied } = useSalesFilters();
   return (
     <div className="space-y-6">
       <div className="flex flex-wrap items-end justify-between gap-3">
@@ -41,9 +49,7 @@ function Dashboard() {
           </h1>
           <p className="text-ink-secondary text-sm mt-0.5">
             Live from SAP Business One
-            {data
-              ? ` · ${data.fyLabel} (${formatDate(data.fyStart)} – ${formatDate(data.fyEnd)})`
-              : ""}
+            {` · ${formatDate(applied.from)} – ${formatDate(applied.to)}`}
           </p>
         </div>
         <div className="flex flex-col items-end gap-2">
@@ -59,6 +65,7 @@ function Dashboard() {
         </div>
       </div>
 
+      <GlobalSalesFilterBar />
       <TurnoverSection />
       <KeyMetricsSection reportTo={salesReportPath("key-metrics")} />
       <SalesChartsSection reportTo={salesReportPath("sales-overview")} />

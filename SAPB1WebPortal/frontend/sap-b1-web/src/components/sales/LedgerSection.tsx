@@ -6,7 +6,8 @@ import type { CustomerLedger, CustomerLookup } from '../../types';
 import { ErrorState } from '../StateViews';
 import { Skeleton } from '../ui/Skeleton';
 import { SectionHeading, formatDate, inr } from './salesShared';
-import { downloadCsv, fyStartDate, toIsoDate } from './salesUtils';
+import { downloadCsv } from './salesUtils';
+import { useSalesFilters } from './salesFilters';
 import { useSalesRefresh } from './salesRefresh';
 import { usePermissions } from '../../permissions/usePermissions';
 
@@ -23,8 +24,8 @@ export default function LedgerSection({ reportTo }: { reportTo?: string }) {
   const { canExport } = usePermissions();
   const [params, setParams] = useSearchParams();
   const customer = params.get('customer') ?? '';
-  const [from, setFrom] = useState(() => toIsoDate(fyStartDate()));
-  const [to, setTo] = useState(() => toIsoDate(new Date()));
+  const { applied } = useSalesFilters();
+  const { from, to } = applied;
 
   const [term, setTerm] = useState('');
   const [options, setOptions] = useState<CustomerLookup[]>([]);
@@ -120,9 +121,6 @@ export default function LedgerSection({ reportTo }: { reportTo?: string }) {
               </ul>
             )}
           </div>
-          <input type="date" value={from} max={to} onChange={(e) => setFrom(e.target.value)} aria-label="From date" className={input} />
-          <span className="text-ink-tertiary text-sm">to</span>
-          <input type="date" value={to} min={from} onChange={(e) => setTo(e.target.value)} aria-label="To date" className={input} />
           {canExport && (
             <button className="btn-secondary ml-auto" onClick={exportCsv} disabled={!data}>
               <Download className="h-4 w-4" /> Download CSV

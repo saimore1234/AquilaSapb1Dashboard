@@ -5,7 +5,8 @@ import type { SalesAnalyticsOptions, SalesAnalyticsQuery, SalesAnalyticsReport }
 import { ErrorState } from '../StateViews';
 import { Skeleton } from '../ui/Skeleton';
 import { SectionHeading, compactInr, inr, num, useChartTheme } from './salesShared';
-import { fyStartDate, pctChange, toIsoDate } from './salesUtils';
+import { pctChange } from './salesUtils';
+import { taxLabel, useSalesFilters } from './salesFilters';
 import { useSalesRefresh } from './salesRefresh';
 
 function Delta({ current, previous }: { current: number; previous: number }) {
@@ -21,10 +22,14 @@ function Delta({ current, previous }: { current: number; previous: number }) {
 /** Slice sales by customer, sales person, item and period; compared with the same period a year earlier. */
 export default function AnalyticsSection({ reportTo }: { reportTo?: string }) {
   const { axisColor, gridColor, cur, prev, tooltipStyle } = useChartTheme();
-  const defaults = useMemo(() => ({ dateFrom: toIsoDate(fyStartDate()), dateTo: toIsoDate(new Date()) }), []);
-
-  const [draft, setDraft] = useState<SalesAnalyticsQuery>(defaults);
-  const [applied, setApplied] = useState<SalesAnalyticsQuery>(defaults);
+  // Period and tax basis come from the global filter; only customer / sales person / item are local.
+  const { applied: global } = useSalesFilters();
+  const [draft, setDraft] = useState<SalesAnalyticsQuery>({});
+  const [local, setLocal] = useState<SalesAnalyticsQuery>({});
+  const applied = useMemo<SalesAnalyticsQuery>(
+    () => ({ ...local, dateFrom: global.from, dateTo: global.to, includeTax: global.includeTax }),
+    [local, global.from, global.to, global.includeTax]
+  );
   const [options, setOptions] = useState<SalesAnalyticsOptions | null>(null);
   const [data, setData] = useState<SalesAnalyticsReport | null>(null);
   const [loading, setLoading] = useState(true);
@@ -84,11 +89,11 @@ export default function AnalyticsSection({ reportTo }: { reportTo?: string }) {
 
   return (
     <section aria-labelledby="ana-h" className="space-y-3">
-      <SectionHeading id="ana-h" title="Sales Analytics" note="Net of GST" reportTo={reportTo} />
+      <SectionHeading id="ana-h" title="Sales Analytics" note={taxLabel(global.includeTax)} reportTo={reportTo} />
 
       <form
-        className="card grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-6 gap-3 items-end"
-        onSubmit={(e) => { e.preventDefault(); setApplied(draft); }}
+        className="card grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3 items-end"
+        onSubmit={(e) => { e.preventDefault(); setLocal(draft); }}
       >
         <div>
           <label className={label} htmlFor="an-cust">Customer</label>
@@ -111,16 +116,8 @@ export default function AnalyticsSection({ reportTo }: { reportTo?: string }) {
             {options?.items.map((i) => <option key={i.key} value={i.key}>{i.name ?? i.key}</option>)}
           </select>
         </div>
-        <div>
-          <label className={label} htmlFor="an-from">From</label>
-          <input id="an-from" type="date" className={`${input} w-full`} value={draft.dateFrom ?? ''} max={draft.dateTo} onChange={(e) => set({ dateFrom: e.target.value })} />
-        </div>
-        <div>
-          <label className={label} htmlFor="an-to">To</label>
-          <input id="an-to" type="date" className={`${input} w-full`} value={draft.dateTo ?? ''} min={draft.dateFrom} onChange={(e) => set({ dateTo: e.target.value })} />
-        </div>
         <div className="flex gap-2">
-          <button type="button" className="btn-secondary" onClick={() => { setDraft(defaults); setApplied(defaults); }}>Reset</button>
+          <button type="button" className="btn-secondary" onClick={() => { setDraft({}); setLocal({}); }}>Reset</button>
           <button type="submit" className="btn-primary">Apply</button>
         </div>
       </form>

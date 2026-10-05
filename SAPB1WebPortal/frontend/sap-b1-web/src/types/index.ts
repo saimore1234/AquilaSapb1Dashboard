@@ -1487,6 +1487,12 @@ export interface InventoryMovement {
 }
 
 // ---- Sales Overview (client-approved dashboard) ----
+export interface SalesOverviewQuery {
+  fromDate?: string;
+  toDate?: string;
+  includeTax?: boolean;
+}
+
 export interface SalesOverviewMonth {
   period: string;
   label: string;
@@ -1500,6 +1506,7 @@ export interface SalesOverview {
   fyStart: string;
   fyEnd: string;
   fyLabel: string;
+  includeTax: boolean;
   totalCustomers: number;
   newCustomersThisQuarter: number;
   openSalesOrders: number;
@@ -1518,20 +1525,25 @@ export interface SalesOverview {
 export interface TurnoverQuery {
   dateFrom?: string;
   dateTo?: string;
+  includeTax?: boolean;
+  netOfCreditNotes?: boolean;
   customerGroup?: number;
-  location?: number;
+  locations?: number[];
   branch?: number;
 }
 
 export interface TurnoverOption {
   code: number;
   name: string;
+  /** Locations only: unticked by default for this company. */
+  isDefaultExcluded?: boolean;
 }
 
 export interface TurnoverBreakup {
   dateFrom: string;
   dateTo: string;
   totalTurnover: number;
+  netOfCreditNotes: boolean;
   customerGroupSales: { customerGroup: string; salesValue: number; percentage: number }[];
   groupLocationBranchSales: { customerGroup: string; location: string; branch: string; salesValue: number; percentage: number }[];
   customerGroups: TurnoverOption[];
@@ -1577,6 +1589,7 @@ export interface InvoiceRegisterQuery {
   dispatch?: 'all' | 'delivery' | 'direct';
   page?: number;
   pageSize?: number;
+  includeTax?: boolean;
 }
 
 export interface InvoiceRegisterRow {
@@ -1662,6 +1675,7 @@ export interface SalesAnalyticsQuery {
   item?: string;
   dateFrom?: string;
   dateTo?: string;
+  includeTax?: boolean;
 }
 
 export interface AnalyticsComparison {

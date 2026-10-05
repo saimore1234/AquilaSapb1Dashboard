@@ -5,15 +5,16 @@ import type { InvoiceRegister } from '../../types';
 import { ErrorState } from '../StateViews';
 import { Skeleton } from '../ui/Skeleton';
 import { SectionHeading, StatusPill, formatDate, inr, num } from './salesShared';
-import { downloadCsv, fyStartDate, toIsoDate } from './salesUtils';
+import { downloadCsv } from './salesUtils';
+import { taxLabel, useSalesFilters } from './salesFilters';
 import { useSalesRefresh } from './salesRefresh';
 import { usePermissions } from '../../permissions/usePermissions';
 
 /** A/R invoices for a period, with search, dispatch filter and CSV export. */
 export default function InvoiceRegisterSection({ reportTo, pageSize = 7 }: { reportTo?: string; pageSize?: number }) {
   const { canExport } = usePermissions();
-  const [from, setFrom] = useState(() => toIsoDate(fyStartDate()));
-  const [to, setTo] = useState(() => toIsoDate(new Date()));
+  const { applied } = useSalesFilters();
+  const { from, to, includeTax } = applied;
   const [dispatch, setDispatch] = useState<'all' | 'delivery' | 'direct'>('all');
   const [search, setSearch] = useState('');
   const [query, setQuery] = useState('');
@@ -39,23 +40,23 @@ export default function InvoiceRegisterSection({ reportTo, pageSize = 7 }: { rep
     seenTick.current = tick;
     if (!silent) setLoading(true);
     setError(null);
-    getInvoiceRegister({ dateFrom: from, dateTo: to, dispatch, search: query || undefined, page, pageSize })
+    getInvoiceRegister({ dateFrom: from, dateTo: to, includeTax, dispatch, search: query || undefined, page, pageSize })
       .then((d) => {
         setData(d);
         markUpdated();
       })
       .catch((err) => setError(err?.response?.data?.message || err.message || 'Unable to load the invoice register.'))
       .finally(() => setLoading(false));
-  }, [from, to, dispatch, query, page, pageSize, reload, tick]);
+  }, [from, to, includeTax, dispatch, query, page, pageSize, reload, tick]);
 
   const totalPages = data ? Math.max(1, Math.ceil(data.totalCount / pageSize)) : 1;
   const pageTotal = (data?.rows ?? []).reduce((s, r) => s + r.value, 0);
 
   async function exportCsv() {
-    const all = await getInvoiceRegister({ dateFrom: from, dateTo: to, dispatch, search: query || undefined, page: 1, pageSize: 5000 });
+    const all = await getInvoiceRegister({ dateFrom: from, dateTo: to, includeTax, dispatch, search: query || undefined, page: 1, pageSize: 5000 });
     downloadCsv(
-      `invoice-register-${from}-to-${to}.csv`,
-      ['Invoice No', 'Date', 'Customer Code', 'Customer', 'Item', 'Quantity', 'Rate', 'Value (incl. GST)', 'Dispatch Status'],
+      `invoice-register-${from}-to-${to}-${includeTax ? 'incl' : 'excl'}-tax.csv`,
+      ['Invoice No', 'Date', 'Customer Code', 'Customer', 'Item', 'Quantity', 'Rate', `Value (${taxLabel(includeTax)})`, 'Dispatch Status'],
       all.rows.map((r) => [r.docNum, r.docDate.slice(0, 10), r.customerCode, r.customerName, r.item, r.quantity, r.rate, r.value, r.dispatchStatus])
     );
   }
@@ -67,9 +68,6 @@ export default function InvoiceRegisterSection({ reportTo, pageSize = 7 }: { rep
       <SectionHeading id="inv-h" title="Invoice Register" note={data ? <>{data.totalCount} invoices · {inr.format(data.totalValue)}</> : undefined} reportTo={reportTo} />
       <div className="card p-0 overflow-hidden">
         <div className="flex flex-wrap items-center gap-2 p-4 border-b border-border">
-          <input type="date" value={from} max={to} onChange={(e) => { setFrom(e.target.value); setPage(1); }} aria-label="From date" className={input} />
-          <span className="text-ink-tertiary text-sm">to</span>
-          <input type="date" value={to} min={from} onChange={(e) => { setTo(e.target.value); setPage(1); }} aria-label="To date" className={input} />
           <select value={dispatch} onChange={(e) => { setDispatch(e.target.value as typeof dispatch); setPage(1); }} aria-label="Dispatch filter" className={input}>
             <option value="all">Dispatch: All</option>
             <option value="delivery">Against Delivery</option>
@@ -99,7 +97,7 @@ export default function InvoiceRegisterSection({ reportTo, pageSize = 7 }: { rep
                   <th className="px-4 py-2.5 font-medium">Item</th>
                   <th className="px-4 py-2.5 font-medium text-right">Qty</th>
                   <th className="px-4 py-2.5 font-medium text-right">Rate</th>
-                  <th className="px-4 py-2.5 font-medium text-right">Value (incl. GST)</th>
+                  <th className="px-4 py-2.5 font-medium text-right">Value ({taxLabel(includeTax)})</th>
                   <th className="px-4 py-2.5 font-medium">Dispatch</th>
                 </tr>
               </thead>

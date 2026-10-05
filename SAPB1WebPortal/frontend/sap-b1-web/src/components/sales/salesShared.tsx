@@ -5,6 +5,7 @@ import { getSalesOverview } from '../../api/sales';
 import type { SalesOverview } from '../../types';
 import { useTheme } from '../../context/ThemeContext';
 import { useSalesRefresh } from './salesRefresh';
+import { useSalesFilters } from './salesFilters';
 
 export const inr = new Intl.NumberFormat('en-IN', { style: 'currency', currency: 'INR', maximumFractionDigits: 0 });
 export const num = new Intl.NumberFormat('en-IN', { maximumFractionDigits: 0 });
@@ -93,16 +94,18 @@ export function SectionHeading({ id, title, note, reportTo }: { id: string; titl
 // One shared request for the overview payload: the dashboard mounts several
 // sections that all need it, so they reuse a single in-flight/recent fetch
 // instead of each calling the API.
-let cache: { at: number; promise: Promise<SalesOverview> } | null = null;
+let cache: { key: string; at: number; promise: Promise<SalesOverview> } | null = null;
 const CACHE_MS = 30_000;
 
-function fetchOverview(force: boolean) {
-  if (force || !cache || Date.now() - cache.at > CACHE_MS) {
-    const promise = getSalesOverview();
+// The cache is keyed by the applied filters, so a different period / tax basis never reuses old data.
+function fetchOverview(force: boolean, params: { fromDate: string; toDate: string; includeTax: boolean }) {
+  const key = `${params.fromDate}|${params.toDate}|${params.includeTax}`;
+  if (force || !cache || cache.key !== key || Date.now() - cache.at > CACHE_MS) {
+    const promise = getSalesOverview(params);
     promise.catch(() => {
       if (cache?.promise === promise) cache = null;
     });
-    cache = { at: Date.now(), promise };
+    cache = { key, at: Date.now(), promise };
   }
   return cache.promise;
 }
@@ -113,12 +116,14 @@ export function useSalesOverview() {
   const [error, setError] = useState<string | null>(null);
 
   const { tick, markUpdated } = useSalesRefresh();
+  const { applied } = useSalesFilters();
   const seenTick = useRef(tick);
+  const seenKey = useRef(`${applied.from}|${applied.to}|${applied.includeTax}`);
 
   function load(force: boolean, silent = false) {
     if (!silent) setLoading(true);
     setError(null);
-    fetchOverview(force)
+    fetchOverview(force, { fromDate: applied.from, toDate: applied.to, includeTax: applied.includeTax })
       .then((d) => {
         setData(d);
         markUpdated();
@@ -128,11 +133,16 @@ export function useSalesOverview() {
   }
   // A refresh tick always bypasses the 30-second shared cache and updates in place.
   useEffect(() => {
-    const refreshed = seenTick.current !== tick;
+    const key = `${applied.from}|${applied.to}|${applied.includeTax}`;
+    const filtersChanged = seenKey.current !== key;
+    seenKey.current = key;
+    // New period / tax basis: drop the old numbers so they can't be mistaken for the new range.
+    if (filtersChanged) setData(null);
+    const refreshed = !filtersChanged && seenTick.current !== tick;
     seenTick.current = tick;
-    load(refreshed, refreshed);
+    load(refreshed || filtersChanged, refreshed);
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [tick]);
+  }, [tick, applied.from, applied.to, applied.includeTax]);
 
   return { data, loading, error, reload: () => load(true) };
 }

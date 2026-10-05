@@ -2,12 +2,14 @@ import { useMemo, useState } from 'react';
 import { Bar, BarChart, CartesianGrid, Cell, ComposedChart, Legend, Pie, PieChart, ResponsiveContainer, Tooltip, XAxis, YAxis } from 'recharts';
 import { ErrorState } from '../StateViews';
 import { Skeleton } from '../ui/Skeleton';
+import { taxLabel, useSalesFilters } from './salesFilters';
 import { RANK_COLORS, SectionHeading, compactInr, inr, num, useChartTheme, useSalesOverview } from './salesShared';
 
 /** Monthly sales, sales-person split, customer-wise and item-wise sales. */
 export default function SalesChartsSection({ reportTo }: { reportTo?: string }) {
   const { axisColor, gridColor, cur, prev, tooltipStyle } = useChartTheme();
   const { data, loading, error, reload } = useSalesOverview();
+  const { applied } = useSalesFilters();
   const [metric, setMetric] = useState<'value' | 'quantity'>('value');
 
   const monthly = useMemo(
@@ -24,13 +26,13 @@ export default function SalesChartsSection({ reportTo }: { reportTo?: string }) 
   if (error) return <div className="card"><ErrorState message={error} onRetry={reload} /></div>;
   return (
   <section aria-labelledby="ov-h" className="space-y-3">
-    <SectionHeading id="ov-h" title="Sales Overview" note={<>All values in ₹ unless stated</>} reportTo={reportTo} />
+    <SectionHeading id="ov-h" title="Sales Overview" note={<>All values in ₹ · {taxLabel(applied.includeTax)}</>} reportTo={reportTo} />
     <div className="grid grid-cols-1 xl:grid-cols-3 gap-4">
       <div className="card xl:col-span-2">
         <div className="flex flex-wrap items-center justify-between gap-2 mb-1">
           <div>
             <h3 className="font-semibold text-ink-primary">Monthly Sales</h3>
-            <p className="text-xs text-ink-tertiary">Invoiced {metric}, this financial year vs previous</p>
+            <p className="text-xs text-ink-tertiary">Invoiced {metric} for the selected period vs the same dates last year</p>
           </div>
           <div className="inline-flex rounded-lg border border-border-strong overflow-hidden text-xs" role="group" aria-label="Monthly metric">
             {(['quantity', 'value'] as const).map((m) => (
@@ -59,8 +61,8 @@ export default function SalesChartsSection({ reportTo }: { reportTo?: string }) 
                 formatter={(v: number) => (metric === 'value' ? inr.format(v) : num.format(v))}
               />
               <Legend wrapperStyle={{ fontSize: 12 }} />
-              <Bar dataKey="previous" name="Previous FY" fill={prev} radius={[4, 4, 0, 0]} maxBarSize={18} />
-              <Bar dataKey="current" name={data?.fyLabel ?? 'This FY'} fill={cur} radius={[4, 4, 0, 0]} maxBarSize={18} />
+              <Bar dataKey="previous" name="Same period last year" fill={prev} radius={[4, 4, 0, 0]} maxBarSize={18} />
+              <Bar dataKey="current" name={data?.fyLabel ?? 'Selected period'} fill={cur} radius={[4, 4, 0, 0]} maxBarSize={18} />
             </ComposedChart>
           </ResponsiveContainer>
         )}
@@ -68,11 +70,11 @@ export default function SalesChartsSection({ reportTo }: { reportTo?: string }) 
 
       <div className="card">
         <h3 className="font-semibold text-ink-primary">Sales Person-wise</h3>
-        <p className="text-xs text-ink-tertiary mb-2">FY invoiced value</p>
+        <p className="text-xs text-ink-tertiary mb-2">Invoiced value, selected period</p>
         {loading || !data ? (
           <Skeleton className="h-[280px] w-full" />
         ) : data.salesPersons.length === 0 ? (
-          <p className="text-sm text-ink-tertiary py-10 text-center">No invoices this financial year.</p>
+          <p className="text-sm text-ink-tertiary py-10 text-center">No invoices in the selected period.</p>
         ) : (
           <>
             <div className="relative">
@@ -94,7 +96,7 @@ export default function SalesChartsSection({ reportTo }: { reportTo?: string }) 
                 </PieChart>
               </ResponsiveContainer>
               <div className="pointer-events-none absolute inset-0 flex flex-col items-center justify-center">
-                <span className="text-[10px] uppercase text-ink-tertiary">Total FY</span>
+                <span className="text-[10px] uppercase text-ink-tertiary">Total</span>
                 <span className="text-base font-semibold text-ink-primary">{compactInr(personTotal)}</span>
               </div>
             </div>
@@ -120,13 +122,13 @@ export default function SalesChartsSection({ reportTo }: { reportTo?: string }) 
         <div className="flex flex-wrap items-center justify-between gap-2 mb-2">
           <div>
             <h3 className="font-semibold text-ink-primary">Customer-wise Sales</h3>
-            <p className="text-xs text-ink-tertiary">Top 8 customers · FY to date</p>
+            <p className="text-xs text-ink-tertiary">Top 8 customers · selected period</p>
           </div>
         </div>
         {loading || !data ? (
           <Skeleton className="h-[260px] w-full" />
         ) : data.topCustomers.length === 0 ? (
-          <p className="text-sm text-ink-tertiary py-10 text-center">No invoices this financial year.</p>
+          <p className="text-sm text-ink-tertiary py-10 text-center">No invoices in the selected period.</p>
         ) : (
           <ul className="space-y-2.5">
             {data.topCustomers.map((c, i) => {
@@ -149,11 +151,11 @@ export default function SalesChartsSection({ reportTo }: { reportTo?: string }) 
 
       <div className="card">
         <h3 className="font-semibold text-ink-primary">Item-wise Sales</h3>
-        <p className="text-xs text-ink-tertiary mb-2">By product · FY to date</p>
+        <p className="text-xs text-ink-tertiary mb-2">By product · selected period</p>
         {loading || !data ? (
           <Skeleton className="h-[260px] w-full" />
         ) : data.topItems.length === 0 ? (
-          <p className="text-sm text-ink-tertiary py-10 text-center">No invoices this financial year.</p>
+          <p className="text-sm text-ink-tertiary py-10 text-center">No invoices in the selected period.</p>
         ) : (
           <ResponsiveContainer width="100%" height={260}>
             <BarChart data={data.topItems.map((i) => ({ name: i.itemName ?? i.itemCode, value: i.value, qty: i.quantity }))}>

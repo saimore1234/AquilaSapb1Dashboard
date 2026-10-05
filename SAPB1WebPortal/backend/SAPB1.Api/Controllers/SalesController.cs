@@ -41,10 +41,16 @@ public class SalesController : ControllerBase
         return Ok(ApiResponse<SalesAnalyticsDto>.Ok(result));
     }
 
+    /// <param name="fromDate">Period start (date only); default = current financial-year start.</param>
+    /// <param name="toDate">Period end, inclusive; default = today.</param>
+    /// <param name="includeTax">true = invoice DocTotal; false = DocTotal - VatSum.</param>
     [HttpGet("overview")]
-    public async Task<ActionResult<ApiResponse<SalesOverviewDto>>> GetOverview(CancellationToken ct)
+    public async Task<ActionResult<ApiResponse<SalesOverviewDto>>> GetOverview(
+        [FromQuery] DateTime? fromDate, [FromQuery] DateTime? toDate, [FromQuery] bool includeTax = true, CancellationToken ct = default)
     {
-        var result = await _salesService.GetOverviewAsync(ct);
+        if (fromDate.HasValue && toDate.HasValue && fromDate.Value.Date > toDate.Value.Date)
+            return BadRequest(ApiResponse<SalesOverviewDto>.Fail("From Date must be on or before To Date."));
+        var result = await _salesService.GetOverviewAsync(fromDate, toDate, includeTax, ct);
         return Ok(ApiResponse<SalesOverviewDto>.Ok(result));
     }
 

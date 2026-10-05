@@ -723,8 +723,11 @@ public class SqlSalesService : ISalesService
 
     // ---------------------------------------------------------------
     // SALES OVERVIEW (client-approved dashboard — stage 1)
-    // Financial year runs Apr–Mar. All figures are real documents; cancelled
-    // invoices (CANCELED <> 'N') are excluded.
+    // Period = the caller's From/To dates (default: current Apr–Mar financial year
+    // start to today). Amounts follow SalesAmount (Include Tax switch). All figures
+    // are real documents; cancelled invoices (CANCELED <> 'N') are excluded.
+    // The Key Metrics tiles (customers, open orders/deliveries, outstanding) are
+    // point-in-time snapshots and do not depend on the period.
     // ---------------------------------------------------------------
     private static (DateTime FyStart, DateTime FyEnd) CurrentFy(DateTime today)
     {
@@ -732,20 +735,20 @@ public class SqlSalesService : ISalesService
         return (new DateTime(startYear, 4, 1), new DateTime(startYear + 1, 3, 31));
     }
 
-    public async Task<SalesOverviewDto> GetOverviewAsync(CancellationToken ct = default)
+    public async Task<SalesOverviewDto> GetOverviewAsync(DateTime? dateFrom, DateTime? dateTo, bool includeTax, CancellationToken ct = default)
     {
         using var db = _connectionFactory.CreateConnection();
 
         var today = DateTime.Today;
-        var (fyStart, fyEnd) = CurrentFy(today);
-        var prevFyStart = fyStart.AddYears(-1);
+        var (fyStart, _) = CurrentFy(today);
+        var from = (dateFrom ?? fyStart).Date;
+        var to = (dateTo ?? today).Date;
         var monthsIntoFy = (today.Year * 12 + today.Month - 1) - (fyStart.Year * 12 + fyStart.Month - 1);
         var quarterStart = fyStart.AddMonths(monthsIntoFy / 3 * 3);
 
         var p = new DynamicParameters();
-        p.Add("FyStart", fyStart);
-        p.Add("FyEnd", fyEnd);
-        p.Add("PrevFyStart", prevFyStart);
+        p.Add("From", from);
+        p.Add("To", to);
         p.Add("QuarterStart", quarterStart);
         p.Add("OverdueCutoff", today.AddDays(-60));
 
@@ -761,66 +764,82 @@ public class SqlSalesService : ISalesService
                 (SELECT ISNULL(SUM(DocTotal - PaidToDate), 0) FROM OINV WHERE DocStatus = 'O' AND CANCELED = 'N' AND DocDate < @OverdueCutoff) AS OverdueOutstanding";
         var dto = await db.QuerySingleAsync<SalesOverviewDto>(new CommandDefinition(kpiSql, p, cancellationToken: ct));
 
-        dto.FyStart = fyStart;
-        dto.FyEnd = fyEnd;
-        dto.FyLabel = $"FY {fyStart.Year}-{(fyEnd.Year % 100):00}";
+        dto.FyStart = from;
+        dto.FyEnd = to;
+        dto.FyLabel = $"{from:dd MMM yyyy} – {to:dd MMM yyyy}";
+        dto.IncludeTax = includeTax;
         dto.OverdueDaysThreshold = 60;
 
-        // Monthly: this FY vs previous FY. Value comes from headers and quantity from
-        // lines in separate queries, so header totals are never multiplied by line count.
-        const string monthValueSql = @"
-            SELECT CONVERT(varchar(7), DocDate, 120) AS Period, SUM(DocTotal) AS Value
-            FROM OINV
-            WHERE CANCELED = 'N' AND DocDate >= @PrevFyStart AND DocDate <= @FyEnd
-            GROUP BY CONVERT(varchar(7), DocDate, 120)";
+        var amt = SalesAmount.Header(includeTax, "h");
+        var lineAmt = SalesAmount.Line(includeTax, "l");
+
+        // Monthly: selected period vs the same dates a year earlier, fetched separately so the two
+        // windows can never mix even for ranges longer than a year. Value comes from headers and
+        // quantity from lines in separate queries, so header totals are never multiplied by line count.
+        var monthValueSql = $@"
+            SELECT CONVERT(varchar(7), h.DocDate, 120) AS Period, SUM({amt}) AS Value
+            FROM OINV h
+            WHERE h.CANCELED = 'N' AND h.DocDate >= @From AND h.DocDate <= @To
+            GROUP BY CONVERT(varchar(7), h.DocDate, 120)";
         const string monthQtySql = @"
             SELECT CONVERT(varchar(7), h.DocDate, 120) AS Period, SUM(l.Quantity) AS Quantity
             FROM OINV h JOIN INV1 l ON l.DocEntry = h.DocEntry
-            WHERE h.CANCELED = 'N' AND h.DocDate >= @PrevFyStart AND h.DocDate <= @FyEnd
+            WHERE h.CANCELED = 'N' AND h.DocDate >= @From AND h.DocDate <= @To
             GROUP BY CONVERT(varchar(7), h.DocDate, 120)";
-        var values = (await db.QueryAsync<(string Period, decimal Value)>(new CommandDefinition(monthValueSql, p, cancellationToken: ct)))
-            .ToDictionary(x => x.Period, x => x.Value);
-        var qtys = (await db.QueryAsync<(string Period, double Quantity)>(new CommandDefinition(monthQtySql, p, cancellationToken: ct)))
-            .ToDictionary(x => x.Period, x => x.Quantity);
-
-        for (var i = 0; i < 12; i++)
+        async Task<(Dictionary<string, decimal> Values, Dictionary<string, double> Qtys)> MonthlyAsync(DateTime f, DateTime t)
         {
-            var m = fyStart.AddMonths(i);
+            var mp = new DynamicParameters();
+            mp.Add("From", f);
+            mp.Add("To", t);
+            var v = (await db.QueryAsync<(string Period, decimal Value)>(new CommandDefinition(monthValueSql, mp, cancellationToken: ct)))
+                .ToDictionary(x => x.Period, x => x.Value);
+            var q = (await db.QueryAsync<(string Period, double Quantity)>(new CommandDefinition(monthQtySql, mp, cancellationToken: ct)))
+                .ToDictionary(x => x.Period, x => x.Quantity);
+            return (v, q);
+        }
+        var cur = await MonthlyAsync(from, to);
+        var prev = await MonthlyAsync(from.AddYears(-1), to.AddYears(-1));
+
+        var firstMonth = new DateTime(from.Year, from.Month, 1);
+        var monthCount = Math.Min(60, (to.Year * 12 + to.Month) - (from.Year * 12 + from.Month) + 1);
+        for (var i = 0; i < monthCount; i++)
+        {
+            var m = firstMonth.AddMonths(i);
             var key = m.ToString("yyyy-MM");
             var prevKey = m.AddYears(-1).ToString("yyyy-MM");
             dto.Monthly.Add(new SalesOverviewMonthDto
             {
                 Period = key,
-                Label = m.ToString("MMM"),
-                Value = values.GetValueOrDefault(key),
-                Quantity = qtys.GetValueOrDefault(key),
-                PreviousValue = values.GetValueOrDefault(prevKey),
-                PreviousQuantity = qtys.GetValueOrDefault(prevKey)
+                Label = monthCount > 12 ? m.ToString("MMM yy") : m.ToString("MMM"),
+                Value = cur.Values.GetValueOrDefault(key),
+                Quantity = cur.Qtys.GetValueOrDefault(key),
+                PreviousValue = prev.Values.GetValueOrDefault(prevKey),
+                PreviousQuantity = prev.Qtys.GetValueOrDefault(prevKey)
             });
         }
 
-        const string personSql = @"
-            SELECT TOP 8 h.SlpCode AS SalesEmployeeCode, s.SlpName AS SalesEmployeeName, SUM(h.DocTotal) AS Value
+        var personSql = $@"
+            SELECT TOP 8 h.SlpCode AS SalesEmployeeCode, s.SlpName AS SalesEmployeeName, SUM({amt}) AS Value
             FROM OINV h LEFT JOIN OSLP s ON s.SlpCode = h.SlpCode
-            WHERE h.CANCELED = 'N' AND h.DocDate >= @FyStart AND h.DocDate <= @FyEnd
+            WHERE h.CANCELED = 'N' AND h.DocDate >= @From AND h.DocDate <= @To
             GROUP BY h.SlpCode, s.SlpName
-            ORDER BY SUM(h.DocTotal) DESC";
+            ORDER BY SUM({amt}) DESC";
         dto.SalesPersons = (await db.QueryAsync<SalesByEmployeeDto>(new CommandDefinition(personSql, p, cancellationToken: ct))).ToList();
 
-        const string customerSql = @"
-            SELECT TOP 8 h.CardCode AS CustomerCode, MAX(h.CardName) AS CustomerName, SUM(h.DocTotal) AS Value
+        var customerSql = $@"
+            SELECT TOP 8 h.CardCode AS CustomerCode, MAX(h.CardName) AS CustomerName, SUM({amt}) AS Value
             FROM OINV h
-            WHERE h.CANCELED = 'N' AND h.DocDate >= @FyStart AND h.DocDate <= @FyEnd
+            WHERE h.CANCELED = 'N' AND h.DocDate >= @From AND h.DocDate <= @To
             GROUP BY h.CardCode
-            ORDER BY SUM(h.DocTotal) DESC";
+            ORDER BY SUM({amt}) DESC";
         dto.TopCustomers = (await db.QueryAsync<SalesByCustomerDto>(new CommandDefinition(customerSql, p, cancellationToken: ct))).ToList();
 
-        const string itemSql = @"
-            SELECT TOP 6 l.ItemCode, MAX(l.Dscription) AS ItemName, SUM(l.LineTotal) AS Value, SUM(l.Quantity) AS Quantity
+        var itemSql = $@"
+            SELECT TOP 6 l.ItemCode, MAX(l.Dscription) AS ItemName, SUM({lineAmt}) AS Value, SUM(l.Quantity) AS Quantity
             FROM INV1 l JOIN OINV h ON h.DocEntry = l.DocEntry
-            WHERE h.CANCELED = 'N' AND h.DocDate >= @FyStart AND h.DocDate <= @FyEnd AND l.ItemCode IS NOT NULL
+            WHERE h.CANCELED = 'N' AND h.DocDate >= @From AND h.DocDate <= @To AND l.ItemCode IS NOT NULL
             GROUP BY l.ItemCode
-            ORDER BY SUM(l.LineTotal) DESC";
+            ORDER BY SUM({lineAmt}) DESC";
         dto.TopItems = (await db.QueryAsync<SalesByItemDto>(new CommandDefinition(itemSql, p, cancellationToken: ct))).ToList();
 
         return dto;

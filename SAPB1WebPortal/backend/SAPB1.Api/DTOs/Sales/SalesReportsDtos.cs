@@ -10,6 +10,7 @@ public class InvoiceRegisterQuery
     public string? Dispatch { get; set; }
     public int Page { get; set; } = 1;
     public int PageSize { get; set; } = 10;
+    public bool IncludeTax { get; set; } = true;
 }
 
 public class InvoiceRegisterRowDto
@@ -114,6 +115,7 @@ public class CustomerLedgerDto
 // ---- Sales Analytics -------------------------------------------------------
 public class SalesAnalyticsQuery
 {
+    public bool IncludeTax { get; set; } = true;
     public string? Customer { get; set; }
     public int? SalesPerson { get; set; }
     public string? Item { get; set; }
@@ -168,12 +170,15 @@ public class SalesAnalyticsOptionsDto
 // ---- Turnover breakup (Sales Dashboard: Total Turnover + Customer Group / Location / Branch) ----
 public class TurnoverQuery
 {
+    public bool IncludeTax { get; set; } = true;
     public DateTime? DateFrom { get; set; }
     public DateTime? DateTo { get; set; }
     /// <summary>OCRG.GroupCode; null = all groups.</summary>
     public int? CustomerGroup { get; set; }
-    /// <summary>OLCT.Code (invoice line location); null = all.</summary>
-    public int? Location { get; set; }
+    /// <summary>OLCT.Code values (invoice line location / "Unit"); empty = all locations.</summary>
+    public int[]? Locations { get; set; }
+    /// <summary>Client basis: invoice lines minus credit-memo lines, header discount deducted, no freight/rounding.</summary>
+    public bool NetOfCreditNotes { get; set; }
     /// <summary>OBPL.BPLId (invoice branch); null = all.</summary>
     public int? Branch { get; set; }
 }
@@ -182,6 +187,8 @@ public class TurnoverOptionDto
 {
     public int Code { get; set; }
     public string Name { get; set; } = string.Empty;
+    /// <summary>Locations only: left unticked by default (company setting SalesTurnover:DefaultExcludedLocations).</summary>
+    public bool IsDefaultExcluded { get; set; }
 }
 
 public class TurnoverGroupDto
@@ -205,6 +212,7 @@ public class TurnoverBreakupDto
     public DateTime DateFrom { get; set; }
     public DateTime DateTo { get; set; }
     public decimal TotalTurnover { get; set; }
+    public bool NetOfCreditNotes { get; set; }
     public List<TurnoverGroupDto> CustomerGroupSales { get; set; } = new();
     public List<TurnoverGroupLocationBranchDto> GroupLocationBranchSales { get; set; } = new();
     public List<TurnoverOptionDto> CustomerGroups { get; set; } = new();

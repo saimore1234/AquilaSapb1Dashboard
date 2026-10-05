@@ -18,6 +18,7 @@ import type {
   SalesDashboard,
   SalesAnalytics,
   SalesOverview,
+  SalesOverviewQuery,
   OpenSalesOrders,
   InvoiceRegister,
   InvoiceRegisterQuery,
@@ -49,8 +50,8 @@ export const getSalesDashboard = () =>
 export const getSalesAnalytics = () =>
   unwrap<SalesAnalytics>(apiClient.get('/sales/analytics'), 'Failed to load sales analytics.');
 
-export const getSalesOverview = () =>
-  unwrap<SalesOverview>(apiClient.get('/sales/overview'), 'Failed to load the sales overview.');
+export const getSalesOverview = (params: SalesOverviewQuery = {}) =>
+  unwrap<SalesOverview>(apiClient.get('/sales/overview', { params }), 'Failed to load the sales overview.');
 
 export const getOpenSalesOrdersBoard = (params: { filter?: string; search?: string; page?: number; pageSize?: number }) =>
   unwrap<OpenSalesOrders>(apiClient.get('/sales/overview/open-orders', { params }), 'Failed to load open sales orders.');
@@ -68,7 +69,7 @@ export const getCustomerLedger = (params: { customer: string; dateFrom?: string;
   unwrap<CustomerLedger>(apiClient.get('/sales/reports/customer-ledger', { params }), 'Customer not found.');
 
 export const getTurnoverBreakup = (params: TurnoverQuery) =>
-  unwrap<TurnoverBreakup>(apiClient.get('/sales/reports/turnover-breakup', { params }), 'Failed to load turnover.');
+  unwrap<TurnoverBreakup>(apiClient.get('/sales/reports/turnover-breakup', { params, paramsSerializer: { indexes: null } }), 'Failed to load turnover.');
 
 export const getSalesAnalyticsOptions = () =>
   unwrap<SalesAnalyticsOptions>(apiClient.get('/sales/reports/analytics-options'), 'Failed to load analytics filters.');

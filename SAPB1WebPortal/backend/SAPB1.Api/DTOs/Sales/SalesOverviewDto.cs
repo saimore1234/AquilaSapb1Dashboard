@@ -10,7 +10,9 @@ public class SalesOverviewDto
 {
     public DateTime FyStart { get; set; }
     public DateTime FyEnd { get; set; }
-    public string FyLabel { get; set; } = string.Empty; // e.g. "FY 2026-27"
+    public string FyLabel { get; set; } = string.Empty; // selected period label, e.g. "01 Apr 2026 – 30 Sep 2026"
+    /// <summary>True when amounts include tax (DocTotal); false = DocTotal - VatSum.</summary>
+    public bool IncludeTax { get; set; } = true;
 
     // Key metrics
     public int TotalCustomers { get; set; }
