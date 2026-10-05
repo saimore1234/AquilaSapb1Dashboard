@@ -10,6 +10,18 @@ import { useSalesRefresh } from './salesRefresh';
 import { taxLabel, useSalesFilters } from './salesFilters';
 import { usePermissions } from '../../permissions/usePermissions';
 
+/** Whole rupees with Indian grouping, no symbol — the client's report format (e.g. 42,20,17,421). */
+const rupees = new Intl.NumberFormat('en-IN', { maximumFractionDigits: 0 });
+/** "Local Customer" -> "Local Sales"; other group names are shown as they are in SAP. */
+const salesType = (group: string) => (/\bcustomer\b/i.test(group) ? group.replace(/\bcustomer\b/i, 'Sales') : group);
+/** Indian financial year (Apr–Mar) of the period end, e.g. "FY 26-27". */
+function fyOf(iso: string) {
+  const y = Number(iso.slice(0, 4));
+  const start = Number(iso.slice(5, 7)) >= 4 ? y : y - 1;
+  return `FY ${String(start).slice(2)}-${String(start + 1).slice(2)}`;
+}
+const dmy = (iso: string) => iso.split('-').reverse().join('-');
+
 const money = new Intl.NumberFormat('en-IN', { style: 'currency', currency: 'INR', minimumFractionDigits: 2, maximumFractionDigits: 2 });
 
 /**
@@ -78,7 +90,7 @@ export default function TurnoverSection({ reportTo }: { reportTo?: string }) {
       groupTotals[r.customerGroup] = (groupTotals[r.customerGroup] ?? 0) + r.salesValue;
     }
     const rows = [...byUnit.entries()]
-      .map(([unit, byGroup]) => ({ unit, byGroup, total: Object.values(byGroup).reduce((a, b) => a + b, 0) }))
+      .map(([unit, byGroup]) => ({ unit, label: data?.locations.find((o) => o.name === unit)?.label || unit, byGroup, total: Object.values(byGroup).reduce((a, b) => a + b, 0) }))
       .sort((a, b) => b.total - a.total);
     return { groups, rows, groupTotals };
   }, [data]);
@@ -144,6 +156,73 @@ export default function TurnoverSection({ reportTo }: { reportTo?: string }) {
         <div className="card"><ErrorState message={error} onRetry={() => setReload((n) => n + 1)} /></div>
       ) : (
         <>
+          <div className="card space-y-5">
+            <div className="flex flex-wrap items-baseline justify-between gap-2">
+              <h3 className="font-semibold text-ink-primary">Turnover Summary</h3>
+              <span className="text-xs text-ink-tertiary">
+                {clientBasis ? 'Net of credit notes' : 'A/R invoices'} · {taxLabel(includeTax)} · whole rupees
+              </span>
+            </div>
+            {loading || !data ? (
+              <Skeleton className="h-[260px] w-full" />
+            ) : empty ? (
+              <p className="text-sm text-ink-tertiary py-8 text-center">No sales data available for the selected filters.</p>
+            ) : (
+              <>
+                <div className="overflow-x-auto">
+                  <table className="w-full max-w-xl border-collapse text-sm">
+                    <tbody>
+                      <tr><th className="border border-border-strong bg-surface-tertiary px-3 py-1.5 text-left font-semibold w-1/2">From Date</th><td className="border border-border-strong px-3 py-1.5 text-right tabular-nums">{dmy(data.dateFrom.slice(0, 10))}</td></tr>
+                      <tr><th className="border border-border-strong bg-surface-tertiary px-3 py-1.5 text-left font-semibold">To Date</th><td className="border border-border-strong px-3 py-1.5 text-right tabular-nums">{dmy(data.dateTo.slice(0, 10))}</td></tr>
+                      <tr>
+                        <th className="border border-border-strong bg-surface-tertiary px-3 py-1.5 text-center font-semibold">Sales Type</th>
+                        <th className="border border-border-strong bg-surface-tertiary px-3 py-1.5 text-center font-semibold">Total A/R Invoice</th>
+                      </tr>
+                      {data.customerGroupSales.map((g) => (
+                        <tr key={g.customerGroup}>
+                          <td className="border border-border-strong px-3 py-1.5 text-center">{salesType(g.customerGroup)}</td>
+                          <td className="border border-border-strong px-3 py-1.5 text-right tabular-nums">{rupees.format(g.salesValue)}</td>
+                        </tr>
+                      ))}
+                      <tr className="font-bold">
+                        <td className="border border-border-strong bg-surface-tertiary px-3 py-1.5 text-center">Total Turnover ( {fyOf(data.dateTo.slice(0, 10))} )</td>
+                        <td className="border border-border-strong bg-surface-tertiary px-3 py-1.5 text-right tabular-nums">{rupees.format(data.totalTurnover)}</td>
+                      </tr>
+                    </tbody>
+                  </table>
+                </div>
+
+                <div className="overflow-x-auto">
+                  <table className="w-full border-collapse text-sm">
+                    <tbody>
+                      <tr><th className="border border-border-strong bg-surface-tertiary px-3 py-1.5 text-left font-semibold w-48">From Date</th><td className="border border-border-strong px-3 py-1.5 text-right tabular-nums" colSpan={unitMatrix.groups.length + 1}>{dmy(data.dateFrom.slice(0, 10))}</td></tr>
+                      <tr><th className="border border-border-strong bg-surface-tertiary px-3 py-1.5 text-left font-semibold">To Date</th><td className="border border-border-strong px-3 py-1.5 text-right tabular-nums" colSpan={unitMatrix.groups.length + 1}>{dmy(data.dateTo.slice(0, 10))}</td></tr>
+                      <tr className="bg-surface-tertiary font-semibold">
+                        <th className="border border-border-strong px-3 py-1.5 text-center">Unit ( Division )</th>
+                        {unitMatrix.groups.map((g) => <th key={g} className="border border-border-strong px-3 py-1.5 text-center">{salesType(g)}</th>)}
+                        <th className="border border-border-strong px-3 py-1.5 text-center">Total TO</th>
+                      </tr>
+                      {unitMatrix.rows.map((r) => (
+                        <tr key={r.unit}>
+                          <td className="border border-border-strong px-3 py-1.5">{r.label}</td>
+                          {unitMatrix.groups.map((g) => (
+                            <td key={g} className="border border-border-strong px-3 py-1.5 text-right tabular-nums">{r.byGroup[g] ? rupees.format(r.byGroup[g]) : ''}</td>
+                          ))}
+                          <td className="border border-border-strong px-3 py-1.5 text-right tabular-nums">{rupees.format(r.total)}</td>
+                        </tr>
+                      ))}
+                      <tr className="font-bold bg-surface-tertiary">
+                        <td className="border border-border-strong px-3 py-1.5 text-center">Total Turnover ( {fyOf(data.dateTo.slice(0, 10))} )</td>
+                        {unitMatrix.groups.map((g) => <td key={g} className="border border-border-strong px-3 py-1.5 text-right tabular-nums">{rupees.format(unitMatrix.groupTotals[g] ?? 0)}</td>)}
+                        <td className="border border-border-strong px-3 py-1.5 text-right tabular-nums">{rupees.format(data.totalTurnover)}</td>
+                      </tr>
+                    </tbody>
+                  </table>
+                </div>
+              </>
+            )}
+          </div>
+
           <div className="card">
             <p className="text-xs font-semibold uppercase tracking-wide text-ink-tertiary">Total Turnover</p>
             {loading || !data ? (
@@ -203,37 +282,6 @@ export default function TurnoverSection({ reportTo }: { reportTo?: string }) {
               </>
             )}
           </div>
-
-          {!loading && data && !empty && (
-            <div className="card">
-              <h3 className="font-semibold text-ink-primary mb-3">Unit-wise Sales <span className="text-ink-tertiary font-normal text-xs">(by invoice line location)</span></h3>
-              <div className="overflow-x-auto">
-                <table className="w-full text-sm">
-                  <thead>
-                    <tr className="text-left text-xs uppercase tracking-wide text-ink-tertiary border-b border-border">
-                      <th className="px-4 py-2.5 font-medium">Unit</th>
-                      {unitMatrix.groups.map((g) => <th key={g} className="px-4 py-2.5 font-medium text-right">{g}</th>)}
-                      <th className="px-4 py-2.5 font-medium text-right">Total</th>
-                    </tr>
-                  </thead>
-                  <tbody>
-                    {unitMatrix.rows.map((r) => (
-                      <tr key={r.unit} className="border-b border-border last:border-0">
-                        <td className="px-4 py-2.5">{r.unit}</td>
-                        {unitMatrix.groups.map((g) => <td key={g} className="px-4 py-2.5 text-right tabular-nums">{r.byGroup[g] ? money.format(r.byGroup[g]) : '—'}</td>)}
-                        <td className="px-4 py-2.5 text-right tabular-nums font-medium">{money.format(r.total)}</td>
-                      </tr>
-                    ))}
-                    <tr className="border-t border-border-strong font-semibold">
-                      <td className="px-4 py-2.5">Total</td>
-                      {unitMatrix.groups.map((g) => <td key={g} className="px-4 py-2.5 text-right tabular-nums">{money.format(unitMatrix.groupTotals[g] ?? 0)}</td>)}
-                      <td className="px-4 py-2.5 text-right tabular-nums">{money.format(data.totalTurnover)}</td>
-                    </tr>
-                  </tbody>
-                </table>
-              </div>
-            </div>
-          )}
 
           <div className="card p-0 overflow-hidden">
             <button

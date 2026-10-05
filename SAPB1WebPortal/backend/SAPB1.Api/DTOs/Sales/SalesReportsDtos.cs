@@ -189,6 +189,8 @@ public class TurnoverOptionDto
     public string Name { get; set; } = string.Empty;
     /// <summary>Locations only: left unticked by default (company setting SalesTurnover:DefaultExcludedLocations).</summary>
     public bool IsDefaultExcluded { get; set; }
+    /// <summary>Locations only: optional display label for reports (company setting SalesTurnover:UnitLabels), e.g. "Unit - 4 ( Chemicals )".</summary>
+    public string? Label { get; set; }
 }
 
 public class TurnoverGroupDto

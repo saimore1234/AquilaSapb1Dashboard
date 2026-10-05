@@ -341,7 +341,13 @@ public class SqlSalesReportsService : ISalesReportsService
         static string Norm(string? v) => new string((v ?? "").Where(c => !char.IsWhiteSpace(c)).ToArray()).ToLowerInvariant();
         var excludedNames = (_config.GetSection($"SalesTurnover:DefaultExcludedLocations:{_company.CompanyCode}").Get<string[]>() ?? Array.Empty<string>())
             .Select(Norm).ToHashSet();
-        foreach (var l in allLocations) l.IsDefaultExcluded = excludedNames.Contains(Norm(l.Name));
+        var unitLabels = (_config.GetSection($"SalesTurnover:UnitLabels:{_company.CompanyCode}").Get<Dictionary<string, string>>() ?? new())
+            .GroupBy(kv => Norm(kv.Key)).ToDictionary(g => g.Key, g => g.First().Value);
+        foreach (var l in allLocations)
+        {
+            l.IsDefaultExcluded = excludedNames.Contains(Norm(l.Name));
+            l.Label = unitLabels.GetValueOrDefault(Norm(l.Name));
+        }
         var explicitLocations = q.Locations is { Length: > 0 };
         int[]? locations = explicitLocations
             ? q.Locations

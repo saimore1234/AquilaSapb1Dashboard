@@ -1537,6 +1537,8 @@ export interface TurnoverOption {
   name: string;
   /** Locations only: unticked by default for this company. */
   isDefaultExcluded?: boolean;
+  /** Locations only: optional report label, e.g. "Unit - 4 ( Chemicals )". */
+  label?: string | null;
 }
 
 export interface TurnoverBreakup {
