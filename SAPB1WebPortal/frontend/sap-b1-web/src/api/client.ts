@@ -3,7 +3,7 @@ import axios from 'axios';
 // Every module in this app talks to the ASP.NET Core API through this one
 // axios instance. This is the ONLY place that knows the API base URL and the
 // JWT token — mirrors what a future mobile app's API layer would do too.
-export const API_BASE_URL = import.meta.env.VITE_API_BASE_URL || 'https://localhost:7010/api';
+export const API_BASE_URL = import.meta.env.VITE_API_BASE_URL || '/api';
 
 export const apiClient = axios.create({
   baseURL: API_BASE_URL,
