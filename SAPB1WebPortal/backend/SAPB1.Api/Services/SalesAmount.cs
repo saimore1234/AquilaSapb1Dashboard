@@ -31,7 +31,7 @@ public static class SalesAmount
     /// <summary>
     /// "Client basis" per-line amounts: A/R invoice lines MINUS A/R credit-memo lines, item/service line
     /// totals only (no freight, no rounding), after spreading each document's header discount over its
-    /// lines. Excl. tax uses LineTotal; incl. tax uses GTotal. Produces rows (BPLId, GroupCode, LocCode, Amt)
+    /// lines. Excl. tax uses LineTotal; incl. tax uses GTotal. Produces rows (BPLId, GroupCode, LocCode, SlpCode, DocDate, ItemCode, CardCode, Sgn [1 invoice / -1 credit memo], Qty, Amt; credit-memo rows are negative)
     /// for the CTE named by the caller. Cancelled documents are excluded; @From/@To bound DocDate.
     /// Reconciled against the client's turnover report (see project notes).
     /// </summary>
@@ -39,7 +39,7 @@ public static class SalesAmount
     {
         var line = includeTax ? "l.GTotal" : "l.LineTotal";
         string Branch(string hdr, string ln, string sign) => $@"
-                SELECT h.BPLId, c.GroupCode, l.LocCode,
+                SELECT h.BPLId, c.GroupCode, l.LocCode, h.SlpCode, h.DocDate, l.ItemCode, h.CardCode, {(sign == "-" ? "-1" : "1")} AS Sgn, {sign}l.Quantity AS Qty,
                        {sign}({line} * (1 - CASE WHEN SUM(l.LineTotal) OVER (PARTITION BY l.DocEntry) <> 0
                                                   THEN h.DiscSum / SUM(l.LineTotal) OVER (PARTITION BY l.DocEntry) ELSE 0 END)) AS Amt
                 FROM {hdr} h

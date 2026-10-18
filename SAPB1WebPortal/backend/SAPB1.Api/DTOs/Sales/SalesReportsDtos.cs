@@ -179,6 +179,8 @@ public class TurnoverQuery
     public int[]? Locations { get; set; }
     /// <summary>Client basis: invoice lines minus credit-memo lines, header discount deducted, no freight/rounding.</summary>
     public bool NetOfCreditNotes { get; set; }
+    /// <summary>Trading | Manufacturing | Ring | Emerson Trading | NA (item master query groups); empty = all.</summary>
+    public string? ProductCategory { get; set; }
     /// <summary>OBPL.BPLId (invoice branch); null = all.</summary>
     public int? Branch { get; set; }
 }

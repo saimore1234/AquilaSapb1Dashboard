@@ -101,7 +101,7 @@ export function RefreshBar() {
         value={intervalMin}
         onChange={(e) => setIntervalMin(Number(e.target.value))}
         aria-label="Auto-refresh"
-        className="px-2 py-1.5 text-xs rounded-lg border border-border-strong bg-surface text-ink-primary"
+        className="ctl text-xs"
       >
         {OPTIONS.map((o) => (
           <option key={o.value} value={o.value}>
@@ -109,7 +109,7 @@ export function RefreshBar() {
           </option>
         ))}
       </select>
-      <button className="btn-secondary !py-1.5 !px-3 !text-xs" onClick={refresh}>
+      <button className="btn-secondary btn-compact" onClick={refresh}>
         <RefreshCw className="h-3.5 w-3.5" /> Refresh
       </button>
     </div>

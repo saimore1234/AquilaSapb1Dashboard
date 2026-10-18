@@ -21,10 +21,12 @@ namespace SAPB1.Api.Controllers;
 public class SalesController : ControllerBase
 {
     private readonly ISalesService _salesService;
+    private readonly ISalesPerformanceService _performance;
 
-    public SalesController(ISalesService salesService)
+    public SalesController(ISalesService salesService, ISalesPerformanceService performance)
     {
         _salesService = salesService;
+        _performance = performance;
     }
 
     [HttpGet("dashboard")]
@@ -32,6 +34,17 @@ public class SalesController : ControllerBase
     {
         var result = await _salesService.GetDashboardAsync(ct);
         return Ok(ApiResponse<SalesDashboardDto>.Ok(result));
+    }
+
+    /// <summary>Sales Dashboard: actual turnover vs approved targets, the named units, open order lines and outstanding.</summary>
+    [HttpGet("dashboard/performance")]
+    public async Task<ActionResult<ApiResponse<SalesPerformanceDto>>> GetPerformance([FromQuery] PerformanceQuery query, CancellationToken ct)
+    {
+        if (query.DateFrom.HasValue && query.DateTo.HasValue && query.DateFrom.Value.Date > query.DateTo.Value.Date)
+            return BadRequest(ApiResponse<SalesPerformanceDto>.Fail("From Date must be on or before To Date."));
+        if (!SAPB1.Api.Services.ProductCategories.IsValid(query.ProductCategory))
+            return BadRequest(ApiResponse<SalesPerformanceDto>.Fail("Unknown product category."));
+        return Ok(ApiResponse<SalesPerformanceDto>.Ok(await _performance.GetAsync(query, ct)));
     }
 
     [HttpGet("analytics")]

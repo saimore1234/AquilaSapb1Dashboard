@@ -85,6 +85,7 @@ export const navItems: NavItem[] = [
       { to: '/sales/invoices', label: 'A/R Invoices' },
       { to: '/sales/credit-memos', label: 'Credit Memos' },
       { to: '/sales/payments', label: 'Payments' },
+      { to: '/sales/targets', label: 'Salesperson Targets' },
       { to: '/sales/analytics', label: 'Analytics' }
     ]
   },

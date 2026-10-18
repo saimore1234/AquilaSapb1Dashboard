@@ -1,43 +1,52 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
-import { Download } from 'lucide-react';
+import { Link } from 'react-router-dom';
+import { ChevronDown, ChevronRight, Download } from 'lucide-react';
 import { getTurnoverBreakup } from '../../api/sales';
 import type { TurnoverBreakup } from '../../types';
 import { ErrorState } from '../StateViews';
 import { Skeleton } from '../ui/Skeleton';
-import { RANK_COLORS, SectionHeading, formatDate } from './salesShared';
+import { RANK_COLORS, SectionHeading } from './salesShared';
 import { downloadCsv } from './salesUtils';
 import { useSalesRefresh } from './salesRefresh';
 import { taxLabel, useSalesFilters } from './salesFilters';
+import { amountTone, formatAmount, formatFy, formatInr, formatPct, formatPeriod, salesTypeLabel } from './formatters';
+import { salesReportLink } from '../../data/salesReports';
+import CustomerGroupSalesSection from './CustomerGroupSalesSection';
 import { usePermissions } from '../../permissions/usePermissions';
 
-/** Whole rupees with Indian grouping, no symbol — the client's report format (e.g. 42,20,17,421). */
-const rupees = new Intl.NumberFormat('en-IN', { maximumFractionDigits: 0 });
-/** "Local Customer" -> "Local Sales"; other group names are shown as they are in SAP. */
-const salesType = (group: string) => (/\bcustomer\b/i.test(group) ? group.replace(/\bcustomer\b/i, 'Sales') : group);
-/** Indian financial year (Apr–Mar) of the period end, e.g. "FY 26-27". */
-function fyOf(iso: string) {
-  const y = Number(iso.slice(0, 4));
-  const start = Number(iso.slice(5, 7)) >= 4 ? y : y - 1;
-  return `FY ${String(start).slice(2)}-${String(start + 1).slice(2)}`;
+/** A grid label that opens the Sales Register for exactly that slice (so the figure beside it can be checked). */
+function RowLink({ to, children }: { to?: string; children: React.ReactNode }) {
+  return to ? (
+    <Link to={to} className="text-ink-primary hover:text-brand-600 dark:hover:text-brand-400 hover:underline focus:outline-none focus-visible:underline">
+      {children}
+    </Link>
+  ) : (
+    <>{children}</>
+  );
 }
-const dmy = (iso: string) => iso.split('-').reverse().join('-');
 
-const money = new Intl.NumberFormat('en-IN', { style: 'currency', currency: 'INR', minimumFractionDigits: 2, maximumFractionDigits: 2 });
+/** A grid cell holding a whole-rupee amount ("–" when zero/missing, red when negative). */
+function Amt({ v, zero }: { v: number | null | undefined; zero?: boolean }) {
+  return <span className={amountTone(v, { zero })}>{formatAmount(v, { zero })}</span>;
+}
 
 /**
- * Total Turnover + Customer Group-wise sales + Customer Group / Location / Branch
- * breakup for a chosen period. Everything (including the filter options) comes
- * from one aggregated API call; nothing is hardcoded.
+ * Turnover for the selected period: compact filter toolbar, the total, the two Excel-style summary grids
+ * (Sales Type and Unit/Division), the combined Customer Group table and the Customer Group / Location / Branch detail.
+ * Everything comes from one aggregated API call; no figure is computed or hardcoded here — the grids only re-add rows the
+ * API already returned.
  */
 export default function TurnoverSection({ reportTo }: { reportTo?: string }) {
   const { canExport } = usePermissions();
   const { applied } = useSalesFilters();
   const { from, to, includeTax } = applied;
-  const [group, setGroup] = useState('');
+  // Group, product category, unit and the credit-note basis come from the shared filter bar.
+  const group = applied.customerGroup;
+  const category = applied.category;
+  const clientBasis = applied.netOfCreditNotes;
+  const unitSel = applied.unit;
   // null = the company's default selection (all locations except default-excluded ones); an array = the user's own choice.
   const [locations, setLocations] = useState<number[] | null>(null);
-  // Default on: invoice lines minus credit memos, header discount deducted (the client's turnover report basis).
-  const [clientBasis, setClientBasis] = useState(true);
   const [branch, setBranch] = useState('');
   const [showDetail, setShowDetail] = useState(false);
   const [reload, setReload] = useState(0);
@@ -57,9 +66,10 @@ export default function TurnoverSection({ reportTo }: { reportTo?: string }) {
       dateTo: to,
       includeTax,
       customerGroup: group ? Number(group) : undefined,
-      locations: locations ?? undefined,
+      locations: unitSel ? [Number(unitSel)] : locations ?? undefined,
       netOfCreditNotes: clientBasis || undefined,
-      branch: branch ? Number(branch) : undefined
+      branch: branch ? Number(branch) : undefined,
+      productCategory: category || undefined
     })
       .then((d) => {
         setData(d);
@@ -68,15 +78,17 @@ export default function TurnoverSection({ reportTo }: { reportTo?: string }) {
       .catch((err) => setError(err?.response?.data?.message || err.message || 'Unable to load turnover.'))
       .finally(() => setLoading(false));
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [from, to, includeTax, group, locations, clientBasis, branch, reload, tick]);
+  }, [from, to, includeTax, group, locations, clientBasis, branch, category, unitSel, reload, tick]);
 
   const maxGroup = useMemo(() => Math.max(1, ...(data?.customerGroupSales ?? []).map((g) => g.salesValue)), [data]);
   const allLocationCodes = (data?.locations ?? []).map((o) => o.code);
-  const effectiveLocations = locations ?? (data?.locations ?? []).filter((o) => !o.isDefaultExcluded).map((o) => o.code);
+  const effectiveLocations = unitSel ? [Number(unitSel)] : locations ?? (data?.locations ?? []).filter((o) => !o.isDefaultExcluded).map((o) => o.code);
   const locationLabel =
-    !data || effectiveLocations.length === allLocationCodes.length
-      ? 'Location: All'
-      : `Location: ${effectiveLocations.length} of ${allLocationCodes.length}`;
+    unitSel
+      ? (data?.locations.find((o) => String(o.code) === unitSel)?.label || data?.locations.find((o) => String(o.code) === unitSel)?.name || 'Selected unit')
+      : !data || effectiveLocations.length === allLocationCodes.length
+      ? 'All locations'
+      : `${effectiveLocations.length} of ${allLocationCodes.length} locations`;
 
   // Unit (location) x customer-group matrix, summed from the already-aggregated breakup rows.
   const unitMatrix = useMemo(() => {
@@ -94,8 +106,20 @@ export default function TurnoverSection({ reportTo }: { reportTo?: string }) {
       .sort((a, b) => b.total - a.total);
     return { groups, rows, groupTotals };
   }, [data]);
-  const input = 'px-3 py-2 text-sm rounded-lg border border-border-strong bg-surface text-ink-primary';
+
+  // Row drill-downs open the Sales Register (same net basis and filters). They are offered only on the net-of-credit-notes basis,
+  // because that is the basis the register reconciles to.
+  const singleLocation = unitSel ? Number(unitSel) : locations && locations.length === 1 ? locations[0] : undefined;
+  const registerTo = (extra: Record<string, string | number | undefined> = {}) =>
+    clientBasis ? salesReportLink('sales-register', { unit: singleLocation ?? (extra.unit as number | undefined), locs: singleLocation === undefined && extra.unit === undefined ? registerLocations?.join(',') : undefined, branch: branch || undefined, customerGroup: group || undefined, category: category || undefined, ...extra }) : undefined;
+  // The Turnover total covers the selected locations (by default all except the company's default-excluded ones); the register
+  // drill-downs carry the same list so their totals reconcile with it.
+  const registerLocations = !unitSel && data && effectiveLocations.length < allLocationCodes.length ? effectiveLocations : undefined;
+  const groupCode = (name: string) => data?.customerGroups.find((o) => o.name === name)?.code;
+  const unitCode = (name: string) => data?.locations.find((o) => o.name === name)?.code;
   const empty = !loading && !error && data && data.groupLocationBranchSales.length === 0;
+  const fy = formatFy(to);
+  const basisText = clientBasis ? 'Net of credit notes' : 'A/R invoices';
 
   function exportCsv() {
     if (!data) return;
@@ -108,219 +132,208 @@ export default function TurnoverSection({ reportTo }: { reportTo?: string }) {
 
   return (
     <section aria-labelledby="to-h" className="space-y-3">
-      <SectionHeading id="to-h" title="Total Turnover" note={data ? <>{formatDate(data.dateFrom)} – {formatDate(data.dateTo)}</> : undefined} reportTo={reportTo} />
+      <SectionHeading id="to-h" title="Turnover" note={<>{formatPeriod(from, to)}</>} reportTo={reportTo} />
 
-      <div className="card flex flex-wrap items-center gap-2">
-        <select value={group} onChange={(e) => setGroup(e.target.value)} aria-label="Customer group" className={input}>
-          <option value="">Customer Group: All</option>
-          {data?.customerGroups.map((o) => <option key={o.code} value={o.code}>{o.name}</option>)}
-        </select>
-        <details className="relative">
-          <summary className={`${input} cursor-pointer select-none list-none`} aria-label="Locations (units)">
-            {locationLabel}
-          </summary>
-          <div className="absolute z-20 mt-1 min-w-[12rem] max-h-64 overflow-auto rounded-lg border border-border-strong bg-surface shadow-elevated p-2 space-y-1">
-            {data?.locations.map((o) => (
-              <label key={o.code} className="flex items-center gap-2 px-1 py-0.5 text-sm text-ink-primary cursor-pointer">
-                <input
-                  type="checkbox"
-                  className="h-4 w-4 accent-brand-600"
-                  checked={effectiveLocations.includes(o.code)}
-                  onChange={(e) => setLocations(e.target.checked ? [...effectiveLocations, o.code] : effectiveLocations.filter((c) => c !== o.code))}
-                />
-                {o.name}
-              </label>
-            ))}
-            <div className="flex gap-3 px-1 pt-1">
-              <button type="button" className="text-xs text-brand-600 dark:text-brand-400" onClick={() => setLocations(allLocationCodes)}>Select all</button>
-              <button type="button" className="text-xs text-brand-600 dark:text-brand-400" onClick={() => setLocations(null)}>Default</button>
+      {/* ---- Filter toolbar: one aligned row of equal-height controls ---- */}
+      <div className="panel px-3 py-2.5 flex flex-wrap items-end gap-x-3 gap-y-2" role="group" aria-label="Turnover filters">
+        <div className="relative">
+          <span className="ctl-label">Location / unit</span>
+          <details className={`group ${unitSel ? 'pointer-events-none opacity-70' : ''}`} title={unitSel ? 'The unit is set in the filter bar above' : undefined}>
+            <summary className="ctl w-44 flex items-center justify-between gap-2 cursor-pointer select-none list-none" aria-label="Locations (units)">
+              <span className="truncate">{locationLabel}</span>
+              <ChevronDown className="h-4 w-4 shrink-0 text-ink-tertiary" aria-hidden="true" />
+            </summary>
+            <div className="absolute z-20 mt-1 min-w-[13rem] max-h-64 overflow-auto rounded-md border border-border-strong bg-surface shadow-popover p-2 space-y-0.5">
+              {data?.locations.map((o) => (
+                <label key={o.code} className="flex items-center gap-2 px-1.5 py-1 text-sm text-ink-primary rounded hover:bg-surface-tertiary cursor-pointer">
+                  <input
+                    type="checkbox"
+                    className="h-4 w-4 accent-brand-600"
+                    checked={effectiveLocations.includes(o.code)}
+                    onChange={(e) => setLocations(e.target.checked ? [...effectiveLocations, o.code] : effectiveLocations.filter((c) => c !== o.code))}
+                  />
+                  {o.name}
+                </label>
+              ))}
+              <div className="flex gap-3 px-1.5 pt-1.5 border-t border-border mt-1">
+                <button type="button" className="text-xs text-brand-600 dark:text-brand-400 hover:underline" onClick={() => setLocations(allLocationCodes)}>Select all</button>
+                <button type="button" className="text-xs text-brand-600 dark:text-brand-400 hover:underline" onClick={() => setLocations(null)}>Default</button>
+              </div>
             </div>
-          </div>
-        </details>
-        <label className="inline-flex items-center gap-2 text-sm text-ink-primary cursor-pointer select-none" title="Invoice lines minus credit memos, header discount deducted, no freight or rounding">
-          <input type="checkbox" className="h-4 w-4 accent-brand-600" checked={clientBasis} onChange={(e) => setClientBasis(e.target.checked)} />
-          Net of credit notes
-        </label>
-        <select value={branch} onChange={(e) => setBranch(e.target.value)} aria-label="Branch" className={input}>
-          <option value="">Branch: All</option>
-          {data?.branches.map((o) => <option key={o.code} value={o.code}>{o.name}</option>)}
-        </select>
+          </details>
+        </div>
+        <div>
+          <label className="ctl-label" htmlFor="to-br">Branch</label>
+          <select id="to-br" value={branch} onChange={(e) => setBranch(e.target.value)} className="ctl w-40">
+            <option value="">All branches</option>
+            {data?.branches.map((o) => <option key={o.code} value={o.code}>{o.name}</option>)}
+          </select>
+        </div>
         {canExport && (
-          <button className="btn-secondary ml-auto" onClick={exportCsv} disabled={!data || data.groupLocationBranchSales.length === 0}>
-            <Download className="h-4 w-4" /> Download CSV
+          <button className="btn-secondary btn-compact ml-auto" onClick={exportCsv} disabled={!data || data.groupLocationBranchSales.length === 0}>
+            <Download className="h-4 w-4" /> CSV
           </button>
         )}
       </div>
 
       {error ? (
-        <div className="card"><ErrorState message={error} onRetry={() => setReload((n) => n + 1)} /></div>
+        <div className="panel p-4"><ErrorState message={error} onRetry={() => setReload((n) => n + 1)} /></div>
       ) : (
         <>
-          <div className="card space-y-5">
-            <div className="flex flex-wrap items-baseline justify-between gap-2">
-              <h3 className="font-semibold text-ink-primary">Turnover Summary</h3>
-              <span className="text-xs text-ink-tertiary">
-                {clientBasis ? 'Net of credit notes' : 'A/R invoices'} · {taxLabel(includeTax)} · whole rupees
-              </span>
+          {/* ---- Total turnover: one compact financial summary ---- */}
+          <div className="panel p-4 flex flex-wrap items-center justify-between gap-x-8 gap-y-3">
+            <div>
+              <p className="text-[11px] font-semibold uppercase tracking-wide text-ink-tertiary">Total turnover</p>
+              {loading || !data ? (
+                <Skeleton className="h-8 w-56 mt-1" />
+              ) : (
+                <p className="text-2xl sm:text-3xl font-semibold text-ink-primary tabular-nums leading-tight mt-0.5">{formatInr(data.totalTurnover)}</p>
+              )}
+              <p className="text-xs text-ink-secondary mt-0.5">{formatPeriod(from, to)} · {fy}</p>
+            </div>
+            <div className="max-w-xl text-xs text-ink-secondary space-y-1">
+              <p>
+                {clientBasis
+                  ? `Net sales: invoice lines minus credit memos, header discount deducted, no freight or rounding (${taxLabel(includeTax)}).`
+                  : `A/R invoices for the period, excluding cancelled documents (${taxLabel(includeTax)}).`}
+              </p>
+              {clientBasis && (
+                <Link
+                  className="inline-block font-medium text-brand-600 dark:text-brand-400 hover:underline"
+                  to={salesReportLink('sales-register', { unit: locations && locations.length === 1 ? locations[0] : undefined, branch: branch || undefined, customerGroup: group || undefined, category: category || undefined })}
+                >
+                  View the Sales Register lines behind this figure →
+                </Link>
+              )}
+            </div>
+          </div>
+
+          {/* ---- Excel-style summary grids ---- */}
+          <div className="panel p-4 space-y-3">
+            <div className="flex flex-wrap items-baseline justify-between gap-x-4 gap-y-1">
+              <h3 className="text-sm font-semibold text-ink-primary">Turnover Summary</h3>
+              <p className="text-xs text-ink-tertiary">
+                {basisText} · {taxLabel(includeTax)} · whole rupees
+                {clientBasis && <> · <Link to={registerTo()!} className="font-medium text-brand-600 dark:text-brand-400 hover:underline">Click any row, or open the Sales Register →</Link></>}
+              </p>
             </div>
             {loading || !data ? (
-              <Skeleton className="h-[260px] w-full" />
+              <Skeleton className="h-[220px] w-full" />
             ) : empty ? (
               <p className="text-sm text-ink-tertiary py-8 text-center">No sales data available for the selected filters.</p>
             ) : (
-              <>
-                <div className="overflow-x-auto">
-                  <table className="w-full max-w-xl border-collapse text-sm">
-                    <tbody>
-                      <tr><th className="border border-border-strong bg-surface-tertiary px-3 py-1.5 text-left font-semibold w-1/2">From Date</th><td className="border border-border-strong px-3 py-1.5 text-right tabular-nums">{dmy(data.dateFrom.slice(0, 10))}</td></tr>
-                      <tr><th className="border border-border-strong bg-surface-tertiary px-3 py-1.5 text-left font-semibold">To Date</th><td className="border border-border-strong px-3 py-1.5 text-right tabular-nums">{dmy(data.dateTo.slice(0, 10))}</td></tr>
-                      <tr>
-                        <th className="border border-border-strong bg-surface-tertiary px-3 py-1.5 text-center font-semibold">Sales Type</th>
-                        <th className="border border-border-strong bg-surface-tertiary px-3 py-1.5 text-center font-semibold">Total A/R Invoice</th>
-                      </tr>
-                      {data.customerGroupSales.map((g) => (
-                        <tr key={g.customerGroup}>
-                          <td className="border border-border-strong px-3 py-1.5 text-center">{salesType(g.customerGroup)}</td>
-                          <td className="border border-border-strong px-3 py-1.5 text-right tabular-nums">{rupees.format(g.salesValue)}</td>
-                        </tr>
-                      ))}
-                      <tr className="font-bold">
-                        <td className="border border-border-strong bg-surface-tertiary px-3 py-1.5 text-center">Total Turnover ( {fyOf(data.dateTo.slice(0, 10))} )</td>
-                        <td className="border border-border-strong bg-surface-tertiary px-3 py-1.5 text-right tabular-nums">{rupees.format(data.totalTurnover)}</td>
-                      </tr>
-                    </tbody>
-                  </table>
-                </div>
-
-                <div className="overflow-x-auto">
-                  <table className="w-full border-collapse text-sm">
-                    <tbody>
-                      <tr><th className="border border-border-strong bg-surface-tertiary px-3 py-1.5 text-left font-semibold w-48">From Date</th><td className="border border-border-strong px-3 py-1.5 text-right tabular-nums" colSpan={unitMatrix.groups.length + 1}>{dmy(data.dateFrom.slice(0, 10))}</td></tr>
-                      <tr><th className="border border-border-strong bg-surface-tertiary px-3 py-1.5 text-left font-semibold">To Date</th><td className="border border-border-strong px-3 py-1.5 text-right tabular-nums" colSpan={unitMatrix.groups.length + 1}>{dmy(data.dateTo.slice(0, 10))}</td></tr>
-                      <tr className="bg-surface-tertiary font-semibold">
-                        <th className="border border-border-strong px-3 py-1.5 text-center">Unit ( Division )</th>
-                        {unitMatrix.groups.map((g) => <th key={g} className="border border-border-strong px-3 py-1.5 text-center">{salesType(g)}</th>)}
-                        <th className="border border-border-strong px-3 py-1.5 text-center">Total TO</th>
-                      </tr>
-                      {unitMatrix.rows.map((r) => (
-                        <tr key={r.unit}>
-                          <td className="border border-border-strong px-3 py-1.5">{r.label}</td>
-                          {unitMatrix.groups.map((g) => (
-                            <td key={g} className="border border-border-strong px-3 py-1.5 text-right tabular-nums">{r.byGroup[g] ? rupees.format(r.byGroup[g]) : ''}</td>
-                          ))}
-                          <td className="border border-border-strong px-3 py-1.5 text-right tabular-nums">{rupees.format(r.total)}</td>
-                        </tr>
-                      ))}
-                      <tr className="font-bold bg-surface-tertiary">
-                        <td className="border border-border-strong px-3 py-1.5 text-center">Total Turnover ( {fyOf(data.dateTo.slice(0, 10))} )</td>
-                        {unitMatrix.groups.map((g) => <td key={g} className="border border-border-strong px-3 py-1.5 text-right tabular-nums">{rupees.format(unitMatrix.groupTotals[g] ?? 0)}</td>)}
-                        <td className="border border-border-strong px-3 py-1.5 text-right tabular-nums">{rupees.format(data.totalTurnover)}</td>
-                      </tr>
-                    </tbody>
-                  </table>
-                </div>
-              </>
-            )}
-          </div>
-
-          <div className="card">
-            <p className="text-xs font-semibold uppercase tracking-wide text-ink-tertiary">Total Turnover</p>
-            {loading || !data ? (
-              <Skeleton className="h-10 w-72 mt-2" />
-            ) : (
-              <p className="text-3xl sm:text-4xl font-semibold text-ink-primary tabular-nums mt-1">{money.format(data.totalTurnover)}</p>
-            )}
-            <p className="text-sm text-ink-secondary mt-1">{clientBasis
-                ? `Net sales for the selected period: invoice lines minus credit memos, header discount deducted, no freight/rounding (${taxLabel(includeTax)})`
-                : `Sales for the selected period (A/R invoices ${taxLabel(includeTax)}, excluding cancelled)`}</p>
-          </div>
-
-          <div className="card">
-            <h3 className="font-semibold text-ink-primary mb-3">Customer Group-wise Sales</h3>
-            {loading || !data ? (
-              <Skeleton className="h-[200px] w-full" />
-            ) : empty ? (
-              <p className="text-sm text-ink-tertiary py-8 text-center">No sales data available for the selected filters.</p>
-            ) : (
-              <>
-                <ul className="space-y-2.5 mb-4">
-                  {data.customerGroupSales.map((g, i) => (
-                    <li key={g.customerGroup} className="grid grid-cols-[minmax(0,10rem)_1fr_auto] items-center gap-3 text-sm">
-                      <span className="truncate text-ink-primary" title={g.customerGroup}>{g.customerGroup}</span>
-                      <div className="h-3 rounded bg-surface-tertiary overflow-hidden">
-                        <div className="h-full rounded" style={{ width: `${(g.salesValue / maxGroup) * 100}%`, background: RANK_COLORS[Math.min(i, 4)] }} />
-                      </div>
-                      <span className="tabular-nums text-ink-secondary w-32 text-right">{money.format(g.salesValue)}</span>
-                    </li>
-                  ))}
-                </ul>
-                <div className="overflow-x-auto">
-                  <table className="w-full text-sm">
+              <div className="grid grid-cols-1 gap-4 xl:grid-cols-[minmax(0,5fr)_minmax(0,7fr)] items-start">
+                <div className="sheet-wrap">
+                  <table className="sheet" aria-label="Turnover by sales type">
                     <thead>
-                      <tr className="text-left text-xs uppercase tracking-wide text-ink-tertiary border-b border-border">
-                        <th className="px-4 py-2.5 font-medium">Customer Group</th>
-                        <th className="px-4 py-2.5 font-medium text-right">Sales Value</th>
-                        <th className="px-4 py-2.5 font-medium text-right">%</th>
+                      <tr>
+                        <th scope="col">Sales type</th>
+                        <th scope="col" className="num">Total A/R invoice</th>
                       </tr>
                     </thead>
                     <tbody>
                       {data.customerGroupSales.map((g) => (
-                        <tr key={g.customerGroup} className="border-b border-border last:border-0">
-                          <td className="px-4 py-2.5">{g.customerGroup}</td>
-                          <td className="px-4 py-2.5 text-right tabular-nums">{money.format(g.salesValue)}</td>
-                          <td className="px-4 py-2.5 text-right tabular-nums">{g.percentage.toFixed(1)}%</td>
+                        <tr key={g.customerGroup}>
+                          <td><RowLink to={registerTo({ customerGroup: groupCode(g.customerGroup) })}>{salesTypeLabel(g.customerGroup)}</RowLink></td>
+                          <td className="num"><Amt v={g.salesValue} /></td>
                         </tr>
                       ))}
-                      <tr className="border-t border-border-strong font-semibold">
-                        <td className="px-4 py-2.5">Total</td>
-                        <td className="px-4 py-2.5 text-right tabular-nums">{money.format(data.totalTurnover)}</td>
-                        <td className="px-4 py-2.5 text-right tabular-nums">100.0%</td>
+                      <tr className="is-total">
+                        <td><RowLink to={registerTo()}>Total turnover ({fy})</RowLink></td>
+                        <td className="num"><Amt v={data.totalTurnover} zero /></td>
                       </tr>
                     </tbody>
                   </table>
                 </div>
-              </>
+
+                <div className="sheet-wrap">
+                  <table className="sheet" aria-label="Turnover by unit and sales type">
+                    <thead>
+                      <tr>
+                        <th scope="col">Unit / division</th>
+                        {unitMatrix.groups.map((g) => <th key={g} scope="col" className="num">{salesTypeLabel(g)}</th>)}
+                        <th scope="col" className="num">Total turnover</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {unitMatrix.rows.map((r) => (
+                        <tr key={r.unit}>
+                          <td><RowLink to={registerTo({ unit: unitCode(r.unit) })}>{r.label}</RowLink></td>
+                          {unitMatrix.groups.map((g) => <td key={g} className="num"><Amt v={r.byGroup[g]} /></td>)}
+                          <td className="num font-medium"><Amt v={r.total} /></td>
+                        </tr>
+                      ))}
+                      <tr className="is-total">
+                        <td><RowLink to={registerTo()}>Total turnover ({fy})</RowLink></td>
+                        {unitMatrix.groups.map((g) => <td key={g} className="num"><Amt v={unitMatrix.groupTotals[g]} zero /></td>)}
+                        <td className="num"><Amt v={data.totalTurnover} zero /></td>
+                      </tr>
+                    </tbody>
+                  </table>
+                </div>
+              </div>
             )}
           </div>
 
-          <div className="card p-0 overflow-hidden">
+          {/* ---- Customer Group → Customer: one combined report (replaces the separate group-wise and customer-wise sections) ---- */}
+          <CustomerGroupSalesSection
+            extra={{
+              branch: branch ? Number(branch) : undefined,
+              locations: registerLocations
+            }}
+          />
+
+          {/* ---- Customer group / location / branch detail (Show / Hide) ---- */}
+          <div className="panel overflow-hidden">
             <button
-              className="w-full flex items-center justify-between px-4 py-3 text-left"
+              className="w-full flex items-center justify-between gap-3 px-4 py-2.5 text-left hover:bg-surface-tertiary focus:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-brand-500"
               onClick={() => setShowDetail((s) => !s)}
               aria-expanded={showDetail}
+              aria-controls="to-detail"
             >
-              <h3 className="font-semibold text-ink-primary">Customer Group / Location / Branch Sales</h3>
-              <span className="text-xs text-brand-600 dark:text-brand-400">{showDetail ? 'Hide' : 'Show'}</span>
+              <span className="flex items-center gap-2">
+                {showDetail ? <ChevronDown className="h-4 w-4 text-ink-tertiary" /> : <ChevronRight className="h-4 w-4 text-ink-tertiary" />}
+                <span className="text-sm font-semibold text-ink-primary">Customer Group / Location / Branch Sales</span>
+                {data && <span className="text-xs text-ink-tertiary">{data.groupLocationBranchSales.length} rows</span>}
+              </span>
+              <span className="text-xs font-medium text-brand-600 dark:text-brand-400">{showDetail ? 'Hide' : 'Show'}</span>
             </button>
             {showDetail && (
-              <div className="overflow-x-auto border-t border-border">
+              <div id="to-detail" className="border-t border-border p-4">
                 {loading || !data ? (
                   <Skeleton className="h-[160px] w-full" />
                 ) : empty ? (
-                  <p className="text-sm text-ink-tertiary py-8 text-center">No sales data available for the selected filters.</p>
+                  <p className="text-sm text-ink-tertiary py-6 text-center">No sales data available for the selected filters.</p>
                 ) : (
-                  <table className="w-full text-sm">
-                    <thead>
-                      <tr className="text-left text-xs uppercase tracking-wide text-ink-tertiary border-b border-border">
-                        <th className="px-4 py-2.5 font-medium">Customer Group</th>
-                        <th className="px-4 py-2.5 font-medium">Location</th>
-                        <th className="px-4 py-2.5 font-medium">Branch</th>
-                        <th className="px-4 py-2.5 font-medium text-right">Sales Value</th>
-                        <th className="px-4 py-2.5 font-medium text-right">% of Total</th>
-                      </tr>
-                    </thead>
-                    <tbody>
-                      {data.groupLocationBranchSales.map((r) => (
-                        <tr key={`${r.customerGroup}|${r.location}|${r.branch}`} className="border-b border-border last:border-0 hover:bg-surface-tertiary/60">
-                          <td className="px-4 py-2.5">{r.customerGroup}</td>
-                          <td className="px-4 py-2.5">{r.location}</td>
-                          <td className="px-4 py-2.5">{r.branch}</td>
-                          <td className="px-4 py-2.5 text-right tabular-nums">{money.format(r.salesValue)}</td>
-                          <td className="px-4 py-2.5 text-right tabular-nums">{r.percentage.toFixed(1)}%</td>
+                  <div className="sheet-wrap">
+                    <table className="sheet" aria-label="Sales by customer group, location and branch">
+                      <thead>
+                        <tr>
+                          <th scope="col">Customer group</th>
+                          <th scope="col">Location</th>
+                          <th scope="col">Branch</th>
+                          <th scope="col" className="num">Sales value</th>
+                          <th scope="col" className="num">% of total</th>
                         </tr>
-                      ))}
-                    </tbody>
-                  </table>
+                      </thead>
+                      <tbody>
+                        {data.groupLocationBranchSales.map((r) => (
+                          <tr key={`${r.customerGroup}|${r.location}|${r.branch}`}>
+                            <td>{r.customerGroup}</td>
+                            <td>{r.location}</td>
+                            <td>{r.branch}</td>
+                            <td className="num"><Amt v={r.salesValue} /></td>
+                            <td className="num">{formatPct(r.percentage)}</td>
+                          </tr>
+                        ))}
+                        <tr className="is-total">
+                          <td colSpan={3}>Total</td>
+                          <td className="num"><Amt v={data.totalTurnover} zero /></td>
+                          <td className="num">{formatPct(100)}</td>
+                        </tr>
+                      </tbody>
+                    </table>
+                  </div>
                 )}
               </div>
             )}

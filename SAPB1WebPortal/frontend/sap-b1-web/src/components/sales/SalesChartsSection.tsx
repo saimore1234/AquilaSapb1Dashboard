@@ -3,6 +3,9 @@ import { Bar, BarChart, CartesianGrid, Cell, ComposedChart, Legend, Pie, PieChar
 import { ErrorState } from '../StateViews';
 import { Skeleton } from '../ui/Skeleton';
 import { taxLabel, useSalesFilters } from './salesFilters';
+import { formatInr } from './formatters';
+import { Link } from 'react-router-dom';
+import { salesReportLink } from '../../data/salesReports';
 import { RANK_COLORS, SectionHeading, compactInr, inr, num, useChartTheme, useSalesOverview } from './salesShared';
 
 /** Monthly sales, sales-person split, customer-wise and item-wise sales. */
@@ -23,16 +26,17 @@ export default function SalesChartsSection({ reportTo }: { reportTo?: string }) 
   );
   const personTotal = useMemo(() => (data?.salesPersons ?? []).reduce((s, x) => s + x.value, 0), [data]);
 
-  if (error) return <div className="card"><ErrorState message={error} onRetry={reload} /></div>;
+  if (error) return <div className="panel p-4"><ErrorState message={error} onRetry={reload} /></div>;
   return (
-  <section aria-labelledby="ov-h" className="space-y-3">
+  <section aria-labelledby="ov-h" className="space-y-2">
     <SectionHeading id="ov-h" title="Sales Overview" note={<>All values in ₹ · {taxLabel(applied.includeTax)}</>} reportTo={reportTo} />
-    <div className="grid grid-cols-1 xl:grid-cols-3 gap-4">
-      <div className="card xl:col-span-2">
+    <div className="grid grid-cols-1 xl:grid-cols-3 gap-3">
+      <div className="panel p-4 xl:col-span-2">
         <div className="flex flex-wrap items-center justify-between gap-2 mb-1">
           <div>
-            <h3 className="font-semibold text-ink-primary">Monthly Sales</h3>
+            <h3 className="text-sm font-semibold text-ink-primary">Monthly Sales</h3>
             <p className="text-xs text-ink-tertiary">Invoiced {metric} for the selected period vs the same dates last year</p>
+            <Link to={salesReportLink('sales-by-month')} className="text-xs font-medium text-brand-600 dark:text-brand-400 hover:underline">View report →</Link>
           </div>
           <div className="inline-flex rounded-lg border border-border-strong overflow-hidden text-xs" role="group" aria-label="Monthly metric">
             {(['quantity', 'value'] as const).map((m) => (
@@ -48,9 +52,9 @@ export default function SalesChartsSection({ reportTo }: { reportTo?: string }) 
           </div>
         </div>
         {loading ? (
-          <Skeleton className="h-[280px] w-full" />
+          <Skeleton className="h-[240px] w-full" />
         ) : (
-          <ResponsiveContainer width="100%" height={280}>
+          <ResponsiveContainer width="100%" height={260}>
             <ComposedChart data={monthly}>
               <CartesianGrid strokeDasharray="3 3" vertical={false} stroke={gridColor} />
               <XAxis dataKey="label" tick={{ fontSize: 11, fill: axisColor }} />
@@ -68,11 +72,11 @@ export default function SalesChartsSection({ reportTo }: { reportTo?: string }) 
         )}
       </div>
 
-      <div className="card">
-        <h3 className="font-semibold text-ink-primary">Sales Person-wise</h3>
-        <p className="text-xs text-ink-tertiary mb-2">Invoiced value, selected period</p>
+      <div className="panel p-4">
+        <h3 className="text-sm font-semibold text-ink-primary">Sales Person-wise</h3>
+        <p className="text-xs text-ink-tertiary mb-2">Invoiced value, selected period · <Link to={salesReportLink('sales-by-salesperson')} className="font-medium text-brand-600 dark:text-brand-400 hover:underline">View report →</Link></p>
         {loading || !data ? (
-          <Skeleton className="h-[280px] w-full" />
+          <Skeleton className="h-[240px] w-full" />
         ) : data.salesPersons.length === 0 ? (
           <p className="text-sm text-ink-tertiary py-10 text-center">No invoices in the selected period.</p>
         ) : (
@@ -105,7 +109,7 @@ export default function SalesChartsSection({ reportTo }: { reportTo?: string }) 
                 <li key={p.salesEmployeeCode} className="flex items-center gap-2 text-sm">
                   <span className="h-2.5 w-2.5 rounded-sm shrink-0" style={{ background: RANK_COLORS[i % RANK_COLORS.length] }} />
                   <span className="truncate text-ink-primary">{p.salesEmployeeName ?? `#${p.salesEmployeeCode}`}</span>
-                  <span className="ml-auto tabular-nums text-ink-secondary">{compactInr(p.value)}</span>
+                  <span className="ml-auto tabular-nums text-ink-secondary">{formatInr(p.value)}</span>
                   <span className="w-12 text-right tabular-nums text-ink-tertiary">
                     {personTotal ? ((p.value / personTotal) * 100).toFixed(1) : '0.0'}%
                   </span>
@@ -117,47 +121,16 @@ export default function SalesChartsSection({ reportTo }: { reportTo?: string }) 
       </div>
     </div>
 
-    <div className="grid grid-cols-1 xl:grid-cols-2 gap-4">
-      <div className="card">
-        <div className="flex flex-wrap items-center justify-between gap-2 mb-2">
-          <div>
-            <h3 className="font-semibold text-ink-primary">Customer-wise Sales</h3>
-            <p className="text-xs text-ink-tertiary">Top 8 customers · selected period</p>
-          </div>
-        </div>
+    <div className="grid grid-cols-1 xl:grid-cols-2 gap-3">
+      <div className="panel p-4">
+        <h3 className="text-sm font-semibold text-ink-primary">Item-wise Sales</h3>
+        <p className="text-xs text-ink-tertiary mb-2">By product · selected period · <Link to={salesReportLink('sales-by-item')} className="font-medium text-brand-600 dark:text-brand-400 hover:underline">View report →</Link></p>
         {loading || !data ? (
-          <Skeleton className="h-[260px] w-full" />
-        ) : data.topCustomers.length === 0 ? (
-          <p className="text-sm text-ink-tertiary py-10 text-center">No invoices in the selected period.</p>
-        ) : (
-          <ul className="space-y-2.5">
-            {data.topCustomers.map((c, i) => {
-              const max = data.topCustomers[0].value || 1;
-              return (
-                <li key={c.customerCode} className="grid grid-cols-[minmax(0,10rem)_1fr_auto] items-center gap-3 text-sm">
-                  <span className="truncate text-ink-primary" title={c.customerName ?? c.customerCode}>
-                    {c.customerName ?? c.customerCode}
-                  </span>
-                  <div className="h-3 rounded bg-surface-tertiary overflow-hidden">
-                    <div className="h-full rounded" style={{ width: `${(c.value / max) * 100}%`, background: RANK_COLORS[Math.min(i, 4)] }} />
-                  </div>
-                  <span className="tabular-nums text-ink-secondary w-20 text-right">{compactInr(c.value)}</span>
-                </li>
-              );
-            })}
-          </ul>
-        )}
-      </div>
-
-      <div className="card">
-        <h3 className="font-semibold text-ink-primary">Item-wise Sales</h3>
-        <p className="text-xs text-ink-tertiary mb-2">By product · selected period</p>
-        {loading || !data ? (
-          <Skeleton className="h-[260px] w-full" />
+          <Skeleton className="h-[240px] w-full" />
         ) : data.topItems.length === 0 ? (
           <p className="text-sm text-ink-tertiary py-10 text-center">No invoices in the selected period.</p>
         ) : (
-          <ResponsiveContainer width="100%" height={260}>
+          <ResponsiveContainer width="100%" height={240}>
             <BarChart data={data.topItems.map((i) => ({ name: i.itemName ?? i.itemCode, value: i.value, qty: i.quantity }))}>
               <CartesianGrid strokeDasharray="3 3" vertical={false} stroke={gridColor} />
               <XAxis dataKey="name" tick={{ fontSize: 10, fill: axisColor }} interval={0} tickFormatter={(n: string) => (n.length > 14 ? `${n.slice(0, 13)}…` : n)} />

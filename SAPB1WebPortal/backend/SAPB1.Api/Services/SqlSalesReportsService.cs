@@ -357,12 +357,13 @@ public class SqlSalesReportsService : ISalesReportsService
         p.Add("HasLocations", locations is null ? 0 : 1);
         p.Add("KeepNoLocation", explicitLocations ? 0 : 1); // default view keeps lines that have no location
         p.Add("Branch", q.Branch);
+        p.Add("Cat", ProductCategories.Canonical(q.ProductCategory));
         p.Add("Unassigned", "(Not assigned)");
 
         // Standard basis: invoice header amount spread over lines (Include Tax switch). Client basis: lines minus credit memos.
         var allocRows = q.NetOfCreditNotes
             ? SalesAmount.NetOfCreditNotesRows(q.IncludeTax)
-            : $@"SELECT h.BPLId, c.GroupCode, l.LocCode,
+            : $@"SELECT h.BPLId, c.GroupCode, l.LocCode, l.ItemCode,
                        {SalesAmount.AllocatedToLine(q.IncludeTax)} AS Amt
                 FROM OINV h
                 JOIN INV1 l ON l.DocEntry = h.DocEntry
@@ -380,7 +381,9 @@ public class SqlSalesReportsService : ISalesReportsService
             LEFT JOIN OCRG g ON g.GroupCode = a.GroupCode
             LEFT JOIN OLCT lc ON lc.Code = a.LocCode
             LEFT JOIN OBPL b ON b.BPLId = a.BPLId
+            LEFT JOIN OITM it ON it.ItemCode = a.ItemCode
             WHERE (@Group IS NULL OR a.GroupCode = @Group)
+              AND (@Cat IS NULL OR {ProductCategories.Expr("it")} = @Cat)
               AND (@HasLocations = 0 OR a.LocCode IN @Locations OR (@KeepNoLocation = 1 AND a.LocCode IS NULL))
               AND (@Branch IS NULL OR a.BPLId = @Branch)
             GROUP BY ISNULL(g.GroupName, @Unassigned), ISNULL(lc.Location, @Unassigned), ISNULL(b.BPLName, @Unassigned)

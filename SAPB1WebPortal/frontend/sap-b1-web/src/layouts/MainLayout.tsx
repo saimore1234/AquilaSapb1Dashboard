@@ -69,6 +69,11 @@ function Shell() {
     return () => document.removeEventListener('keydown', onKeyDown);
   }, [setSearchOpen, setModulesOpen, modulesOpen, navigate]);
 
+  // Default landing: signing in (or opening the app root) opens the Sales Dashboard for anyone who can access Sales. The
+  // all-modules home page stays available at /dashboard, and every Sales route (incl. Sales Overview) is unchanged. Users without
+  // Sales access fall through to the existing rule below.
+  if (location.pathname === '/' && canAccessPath('/sales')) return <Navigate to="/sales" replace />;
+
   // Users who can't see the home page land on the first page they can open.
   if (location.pathname === '/' && denied) {
     const landing = firstAccessibleRoute(navItems, access);

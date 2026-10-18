@@ -1527,6 +1527,7 @@ export interface TurnoverQuery {
   dateTo?: string;
   includeTax?: boolean;
   netOfCreditNotes?: boolean;
+  productCategory?: string;
   customerGroup?: number;
   locations?: number[];
   branch?: number;
@@ -1705,4 +1706,520 @@ export interface SalesAnalyticsOptions {
   customers: { key: string; name: string | null }[];
   salesPersons: { key: string; name: string | null }[];
   items: { key: string; name: string | null }[];
+}
+
+// ---- Salesperson Targets ----
+export type SalesTargetStatus = 'Draft' | 'Submitted' | 'Approved' | 'Rejected' | 'Superseded';
+export type SalesTargetPeriodType = 'Monthly' | 'Quarterly' | 'Annual' | 'Custom';
+
+export interface SalesTarget {
+  id: number;
+  sapSlpCode: number;
+  salespersonName: string;
+  unitCode: number;
+  unitName: string;
+  financialYear: string;
+  periodType: SalesTargetPeriodType;
+  periodStart: string;
+  periodEnd: string;
+  targetAmount: number;
+  currencyCode: string;
+  hasItems: boolean;
+  itemCount: number;
+  totalTargetQuantity: number;
+  actualQuantity: number;
+  remarks: string | null;
+  status: SalesTargetStatus;
+  revisionOfId: number | null;
+  reviewRemarks: string | null;
+  createdBy: string;
+  createdAt: string;
+  updatedBy: string | null;
+  updatedAt: string | null;
+  submittedBy: string | null;
+  submittedAt: string | null;
+  reviewedBy: string | null;
+  reviewedAt: string | null;
+  approvedBy: string | null;
+  approvedAt: string | null;
+  actualSales: number;
+  achievementPct: number | null;
+  remainingTarget: number;
+  variance: number;
+  salesOrders: number;
+  arInvoices: number;
+}
+
+export interface SalesTargetLine {
+  id: number;
+  itemCode: string;
+  itemName: string | null;
+  itemGroup: string | null;
+  uom: string | null;
+  targetQuantity: number;
+  targetAmount: number;
+  remarks: string | null;
+  actualQuantity: number;
+  actualAmount: number;
+  achievementPct: number | null;
+  quantityAchievementPct: number | null;
+  remainingAmount: number;
+  remainingQuantity: number;
+}
+
+export interface SalesTargetItemOption {
+  code: string;
+  name: string;
+  group: string | null;
+  uom: string | null;
+}
+
+export interface SalesTargetListResponse {
+  summary: {
+    totalTarget: number;
+    totalActual: number;
+    overallAchievementPct: number | null;
+    salespersonsWithTargets: number;
+    pendingApproval: number;
+  };
+  byPerson: { sapSlpCode: number; salesperson: string; target: number; actual: number }[];
+  rows: SalesTarget[];
+  totalCount: number;
+  includeTax: boolean;
+}
+
+export interface SalesTargetAuditEntry {
+  id: number;
+  action: string;
+  performedBy: string;
+  performedAt: string;
+  detail: string | null;
+}
+
+export interface SalesTargetDetail {
+  target: SalesTarget;
+  lines: SalesTargetLine[];
+  history: SalesTargetAuditEntry[];
+}
+
+export interface SalesTargetOptions {
+  salespersons: { code: number; name: string; active: boolean }[];
+  units: TurnoverOption[];
+  financialYears: string[];
+}
+
+export interface SalesTargetQuery {
+  financialYear?: string;
+  periodType?: string;
+  unit?: number;
+  salesperson?: number;
+  item?: string;
+  fromDate?: string;
+  toDate?: string;
+  status?: string;
+  search?: string;
+  includeTax?: boolean;
+  page?: number;
+  pageSize?: number;
+}
+
+export interface SaveSalesTargetLineRequest {
+  itemCode: string;
+  targetQuantity: number;
+  targetAmount: number;
+  remarks?: string;
+}
+
+export interface SaveSalesTargetRequest {
+  sapSlpCode: number;
+  unitCode: number;
+  financialYear: string;
+  periodType: SalesTargetPeriodType;
+  periodIndex: number;
+  /** Custom period only (yyyy-MM-dd). */
+  fromDate?: string;
+  toDate?: string;
+  targetAmount: number;
+  remarks?: string;
+  /** Item-wise rows; when present the header total is the sum of the row amounts (computed server-side). */
+  lines?: SaveSalesTargetLineRequest[];
+}
+
+// ---- Detail reports that reproduce the client's own SAP queries ----
+export interface DetailReportQuery {
+  dateFrom?: string;
+  dateTo?: string;
+  warehouse?: string;
+  unit?: number;
+  branch?: number;
+  salesperson?: number;
+  customer?: string;
+  customerGroup?: number;
+  productCategory?: string;
+  item?: string;
+  docType?: string;
+  search?: string;
+  newThisQuarter?: boolean;
+  includeTax?: boolean;
+  netOfCreditNotes?: boolean;
+  locations?: number[];
+  allDates?: boolean;
+  by?: string;
+  page?: number;
+  pageSize?: number;
+}
+
+export interface ReportFilterOptions {
+  units: TurnoverOption[];
+  branches: TurnoverOption[];
+  customerGroups: TurnoverOption[];
+  salespersons: { code: number; name: string; active: boolean }[];
+  warehouses: { code: string; name: string }[];
+  productCategories: string[];
+}
+
+export interface OpenOrderTotals {
+  openLines: number;
+  distinctOrders: number;
+  orderedQuantity: number;
+  openQuantity: number;
+  lineTotal: number;
+}
+
+export interface OpenSalesOrderLine {
+  docEntry: number;
+  docNum: number;
+  postingDate: string;
+  dueDate: string | null;
+  customerCode: string;
+  customerName: string | null;
+  itemCode: string | null;
+  itemDescription: string | null;
+  productCategory: string | null;
+  warehouseCode: string | null;
+  warehouse: string | null;
+  unit: string | null;
+  salesperson: string | null;
+  orderedQuantity: number;
+  openQuantity: number;
+  unitPrice: number;
+  lineTotal: number;
+  documentStatus: string;
+  lineStatus: string;
+}
+
+export interface OpenSalesOrderReport {
+  dateFrom: string;
+  dateTo: string;
+  totals: OpenOrderTotals;
+  totalCount: number;
+  rows: OpenSalesOrderLine[];
+}
+
+export interface OpenPurchaseOrderLine {
+  docEntry: number;
+  docNum: number;
+  postingDate: string;
+  dueDate: string | null;
+  vendorCode: string;
+  vendorName: string | null;
+  itemCode: string | null;
+  itemDescription: string | null;
+  warehouseCode: string | null;
+  warehouse: string | null;
+  orderedQuantity: number;
+  openQuantity: number;
+  unitPrice: number;
+  lineTotal: number;
+  documentStatus: string;
+}
+
+export interface OpenPurchaseOrderReport {
+  dateFrom: string;
+  dateTo: string;
+  totals: OpenOrderTotals;
+  totalCount: number;
+  rows: OpenPurchaseOrderLine[];
+}
+
+export interface SalesRegisterRow {
+  docType: string;
+  docEntry: number;
+  docNum: number;
+  postingDate: string;
+  customerCode: string;
+  customerName: string | null;
+  customerGroup: string | null;
+  salesperson: string | null;
+  itemCode: string | null;
+  itemDescription: string | null;
+  productCategory: string | null;
+  warehouse: string | null;
+  unit: string | null;
+  quantity: number;
+  rate: number;
+  basicAmount: number;
+  netSales: number;
+  taxAmount: number;
+  netSalesInclTax: number;
+}
+
+export interface SalesRegisterReport {
+  dateFrom: string;
+  dateTo: string;
+  totals: { lines: number; quantity: number; basicAmount: number; netSales: number; taxAmount: number; netSalesInclTax: number };
+  totalCount: number;
+  rows: SalesRegisterRow[];
+}
+
+export interface LedgerOutstandingQuery {
+  asOf?: string;
+  customer?: string;
+  branch?: number;
+  page?: number;
+  pageSize?: number;
+}
+
+export interface OutstandingLedger {
+  asOf: string;
+  totalOutstanding: number;
+  customerCount: number;
+  byBranch: { branchCode: number | null; branch: string; amount: number }[];
+  ageing: { label: string; amount: number }[];
+  totalCount: number;
+  customers: {
+    customerCode: string;
+    customerName: string | null;
+    salesPerson: string | null;
+    balance: number;
+    days0To30: number;
+    days31To60: number;
+    days61To90: number;
+    days91To120: number;
+    days121To150: number;
+    days151To180: number;
+    days181To210: number;
+    days211Plus: number;
+  }[];
+  unpaidInvoicesToday: number;
+  noBillToBalance: number;
+  noBillToCustomers: number;
+}
+
+export interface OutstandingLine {
+  transId: number;
+  customerCode: string;
+  customerName: string | null;
+  branch: string | null;
+  postingDate: string;
+  dueDate: string | null;
+  transType: number;
+  documentType: string | null;
+  baseRef: string | null;
+  ref1: string | null;
+  daysOutstanding: number;
+  balance: number;
+}
+
+export interface OutstandingLinesReport {
+  asOf: string;
+  total: number;
+  totalCount: number;
+  rows: OutstandingLine[];
+}
+
+export interface CustomerRow {
+  customerCode: string;
+  customerName: string | null;
+  customerGroup: string | null;
+  salesperson: string | null;
+  city: string | null;
+  createdDate: string | null;
+  balance: number;
+}
+
+export interface CustomerReport {
+  totals: { customers: number; newThisQuarter: number; quarterStart: string };
+  totalCount: number;
+  rows: CustomerRow[];
+}
+
+export interface PendingDeliveryRow {
+  docEntry: number;
+  docNum: number;
+  postingDate: string;
+  dueDate: string | null;
+  customerCode: string;
+  customerName: string | null;
+  salesperson: string | null;
+  branch: string | null;
+  lines: number;
+  daysOpen: number;
+  docTotal: number;
+}
+
+export interface PendingDeliveryReport {
+  totals: { deliveries: number; docTotal: number };
+  totalCount: number;
+  rows: PendingDeliveryRow[];
+}
+
+export interface SalesAnalysisRow {
+  key: string;
+  name: string;
+  invoices: number;
+  quantity: number;
+  value: number;
+  percentage: number;
+}
+
+export interface SalesAnalysisReport {
+  dateFrom: string;
+  dateTo: string;
+  by: string;
+  includeTax: boolean;
+  totals: { rows: number; invoices: number; quantity: number; value: number };
+  totalCount: number;
+  rows: SalesAnalysisRow[];
+}
+
+// ---- Sales Dashboard: turnover vs target + named units ----
+export interface PerformanceQuery {
+  dateFrom?: string;
+  dateTo?: string;
+  unit?: number;
+  includeTax?: boolean;
+  netOfCreditNotes?: boolean;
+  customerGroup?: number;
+  salesperson?: number;
+  productCategory?: string;
+}
+
+export interface UnitPerformance {
+  label: string;
+  locationCode: number | null;
+  locationName: string | null;
+  branchCode: number | null;
+  branchName: string | null;
+  actual: number;
+  targetConfigured: boolean;
+  target: number | null;
+  achievementPct: number | null;
+  variance: number | null;
+  openOrderLines: number;
+  openOrderValue: number;
+  outstanding: number | null;
+  note: string | null;
+}
+
+export interface SalesPerformance {
+  dateFrom: string;
+  dateTo: string;
+  includeTax: boolean;
+  netOfCreditNotes: boolean;
+  selectedUnit: number | null;
+  selectedUnitLabel: string;
+  actual: number;
+  targetConfigured: boolean;
+  target: number | null;
+  achievementPct: number | null;
+  remaining: number | null;
+  variance: number | null;
+  status: 'Achieved' | 'In progress' | 'No target configured';
+  targetCount: number;
+  partialTargetsExcluded: number;
+  targetBasis: string;
+  units: UnitPerformance[];
+  openOrders: OpenOrderTotals;
+  totalOutstanding: number;
+  outstandingAvailable: boolean;
+  outstandingNote: string | null;
+}
+
+export interface CustomerGroupSalesRow {
+  groupCode: number | null;
+  customerGroup: string;
+  customerCode: string;
+  customerName: string | null;
+  value: number;
+  documents: number;
+}
+
+export interface CustomerGroupSales {
+  dateFrom: string;
+  dateTo: string;
+  includeTax: boolean;
+  netOfCreditNotes: boolean;
+  total: number;
+  rows: CustomerGroupSalesRow[];
+}
+
+export interface UnpaidInvoiceRow {
+  docEntry: number;
+  docNum: number;
+  postingDate: string;
+  dueDate: string | null;
+  customerCode: string;
+  customerName: string | null;
+  salesperson: string | null;
+  branch: string | null;
+  docTotal: number;
+  paidToDate: number;
+  balance: number;
+  daysOverdue: number;
+}
+
+export interface UnpaidInvoiceReport {
+  totals: { invoices: number; docTotal: number; paidToDate: number; balance: number; overdue: number };
+  totalCount: number;
+  rows: UnpaidInvoiceRow[];
+}
+
+export interface LostCustomerQuery {
+  financialYear?: string;
+  asOf?: string;
+  unit?: number;
+  customerGroup?: number;
+  salesperson?: number;
+  minPreviousSales?: number;
+  search?: string;
+  includeTax?: boolean;
+  page?: number;
+  pageSize?: number;
+}
+
+export interface LostCustomerRow {
+  customerCode: string;
+  customerName: string | null;
+  customerGroup: string | null;
+  salesperson: string | null;
+  previousYearSales: number;
+  currentYearSales: number;
+  lastSalesDate: string | null;
+  previousInvoiceLines: number;
+  frozen: boolean;
+}
+
+export interface LostCustomerReport {
+  financialYear: string;
+  previousFrom: string;
+  previousTo: string;
+  currentFrom: string;
+  currentTo: string;
+  currentFyEnd: string;
+  currentYearComplete: boolean;
+  summary: { previousYearCustomers: number; lostCustomers: number; lostPreviousSales: number; previousYearSales: number };
+  totalCount: number;
+  rows: LostCustomerRow[];
+}
+
+export interface OrderExecutionRow {
+  orderEntry: number; orderNo: number; orderDate: string; customerCode: string; customerName: string | null;
+  salesperson: string | null; branch: string | null; orderedQuantity: number | null;
+  invoiceNo: number | null; invoiceDate: string | null; invoicedQuantity: number | null; daysToInvoice: number | null; status: string;
+}
+export interface OrderExecutionReport {
+  dateFrom: string; dateTo: string;
+  summary: { orders: number; invoicedOrders: number; awaitingInvoice: number; averageDays: number | null; medianDays: number | null; longestDays: number | null; shortestDays: number | null; buckets: { label: string; orders: number }[] };
+  totalCount: number; rows: OrderExecutionRow[];
 }

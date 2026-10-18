@@ -51,10 +51,11 @@ export default function OutstandingSection({ reportTo }: { reportTo?: string }) 
         note={data ? <>as on {new Date(data.asOf).toLocaleDateString('en-IN', { day: '2-digit', month: 'short', year: 'numeric' })} · credit terms {data.creditTermsDays} days</> : undefined}
         reportTo={reportTo}
       />
-      <div className="grid grid-cols-1 xl:grid-cols-5 gap-4">
-        <div className="xl:col-span-2 space-y-4">
+      <div className="grid grid-cols-1 xl:grid-cols-5 gap-3">
+        {/* Left column stretches to the table's height: the chart card takes the remaining space, so there is no empty gap under it. */}
+        <div className="xl:col-span-2 flex flex-col gap-3">
           {loading || !data ? (
-            <Skeleton className="h-[300px] w-full" />
+            <Skeleton className="h-[300px] w-full flex-1" />
           ) : (
             <>
               <div className="grid grid-cols-1 sm:grid-cols-3 xl:grid-cols-1 2xl:grid-cols-3 gap-3">
@@ -74,10 +75,12 @@ export default function OutstandingSection({ reportTo }: { reportTo?: string }) 
                   <p className="text-xs text-ink-tertiary mt-1">{pct(data.overdue)}% · {data.overdueCustomerCount} customers</p>
                 </div>
               </div>
-              <div className="card">
-                <h3 className="font-semibold text-ink-primary">Ageing Debtors</h3>
+              <div className="card flex flex-col flex-1 min-h-[280px]">
+                <h3 className="text-sm font-semibold text-ink-primary">Ageing Debtors</h3>
                 <p className="text-xs text-ink-tertiary mb-2">Days since invoice date</p>
-                <ResponsiveContainer width="100%" height={210}>
+                <div className="relative flex-1 min-h-[210px]">
+                  <div className="absolute inset-0">
+                <ResponsiveContainer width="100%" height="100%">
                   <BarChart data={data.buckets}>
                     <CartesianGrid strokeDasharray="3 3" vertical={false} stroke={gridColor} />
                     <XAxis dataKey="label" tick={{ fontSize: 11, fill: axisColor }} />
@@ -88,6 +91,8 @@ export default function OutstandingSection({ reportTo }: { reportTo?: string }) 
                     </Bar>
                   </BarChart>
                 </ResponsiveContainer>
+                  </div>
+                </div>
               </div>
             </>
           )}
@@ -95,7 +100,7 @@ export default function OutstandingSection({ reportTo }: { reportTo?: string }) 
 
         <div className="card p-0 overflow-hidden xl:col-span-3">
           <div className="px-4 py-3 border-b border-border">
-            <h3 className="font-semibold text-ink-primary">Customer-wise Ageing</h3>
+            <h3 className="text-sm font-semibold text-ink-primary">Customer-wise Ageing</h3>
             <p className="text-xs text-ink-tertiary">Top 15 outstanding accounts · select a customer for the ledger</p>
           </div>
           <div className="overflow-x-auto">
@@ -118,18 +123,18 @@ export default function OutstandingSection({ reportTo }: { reportTo?: string }) 
                     ))
                   : data.customers.map((c) => (
                       <tr key={c.customerCode} className="border-b border-border last:border-0 hover:bg-surface-tertiary/60">
-                        <td className="px-4 py-3">
+                        <td className="px-4 py-2">
                           <Link to={`${salesReportPath('customer-ledger')}?customer=${encodeURIComponent(c.customerCode)}`} className="text-ink-primary font-medium hover:text-brand-600 dark:hover:text-brand-400">
                             {c.customerName ?? c.customerCode}
                           </Link>
                           {c.salesPerson && <div className="text-xs text-ink-tertiary">{c.salesPerson}</div>}
                         </td>
-                        <td className="px-3 py-3 text-right tabular-nums">{cell(c.days0To30)}</td>
-                        <td className="px-3 py-3 text-right tabular-nums">{cell(c.days31To60)}</td>
-                        <td className="px-3 py-3 text-right tabular-nums text-warning">{cell(c.days61To90)}</td>
-                        <td className="px-3 py-3 text-right tabular-nums text-danger">{cell(c.days90Plus)}</td>
-                        <td className="px-3 py-3 text-right tabular-nums font-medium">{compactInr(c.total)}</td>
-                        <td className="px-4 py-3"><StatusPill text={c.risk} /></td>
+                        <td className="px-3 py-2 text-right tabular-nums">{cell(c.days0To30)}</td>
+                        <td className="px-3 py-2 text-right tabular-nums">{cell(c.days31To60)}</td>
+                        <td className="px-3 py-2 text-right tabular-nums text-warning">{cell(c.days61To90)}</td>
+                        <td className="px-3 py-2 text-right tabular-nums text-danger">{cell(c.days90Plus)}</td>
+                        <td className="px-3 py-2 text-right tabular-nums font-medium">{compactInr(c.total)}</td>
+                        <td className="px-4 py-2"><StatusPill text={c.risk} /></td>
                       </tr>
                     ))}
                 {!loading && data?.customers.length === 0 && (

@@ -8,10 +8,7 @@ import OutstandingSection from "../../components/sales/OutstandingSection";
 import LedgerSection from "../../components/sales/LedgerSection";
 import AnalyticsSection from "../../components/sales/AnalyticsSection";
 import SampleStatusSection from "../../components/sales/SampleStatusSection";
-import {
-  formatDate,
-  useSalesOverview,
-} from "../../components/sales/salesShared";
+import { formatFy, formatPeriod } from "../../components/sales/formatters";
 import {
   RefreshBar,
   SalesRefreshProvider,
@@ -38,32 +35,22 @@ export default function SalesOverview() {
 }
 
 function Dashboard() {
-  const { data } = useSalesOverview();
   const { applied } = useSalesFilters();
   return (
-    <div className="space-y-6">
-      <div className="flex flex-wrap items-end justify-between gap-3">
-        <div>
-          <h1 className="text-xl sm:text-2xl font-semibold text-ink-primary">
-            Sales Dashboard
-          </h1>
-          <p className="text-ink-secondary text-sm mt-0.5">
-            Live from SAP Business One
-            {` · ${formatDate(applied.from)} – ${formatDate(applied.to)}`}
+    <div className="space-y-4">
+      <header className="flex flex-wrap items-start justify-between gap-x-4 gap-y-2">
+        <div className="min-w-0">
+          <h1 className="text-xl font-semibold text-ink-primary leading-tight">Sales Overview</h1>
+          <p className="text-sm text-ink-secondary mt-0.5">
+            {formatFy(applied.to)} · {formatPeriod(applied.from, applied.to)} · Live from SAP Business One
           </p>
         </div>
-        <div className="flex flex-col items-end gap-2">
+        <div className="flex flex-wrap items-center justify-end gap-2">
           <RefreshBar />
-          <div className="flex gap-2">
-            <Link to={SALES_REPORTS_PATH} className="btn-secondary">
-              All Reports
-            </Link>
-            <Link to="/sales/analytics" className="btn-secondary">
-              Sales Analytics
-            </Link>
-          </div>
+          <Link to={SALES_REPORTS_PATH} className="btn-secondary btn-compact">All Reports</Link>
+          <Link to="/sales/analytics" className="btn-secondary btn-compact">Sales Analytics</Link>
         </div>
-      </div>
+      </header>
 
       <GlobalSalesFilterBar />
       <TurnoverSection />

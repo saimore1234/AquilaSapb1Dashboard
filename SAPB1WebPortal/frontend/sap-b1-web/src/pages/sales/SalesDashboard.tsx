@@ -6,12 +6,54 @@ import type { SalesDashboard as SalesDashboardType } from '../../types';
 import { ErrorState } from '../../components/StateViews';
 import { CardGridSkeleton } from '../../components/ui/Skeleton';
 import StatCard from '../../components/StatCard';
+import SalesPerformanceSection from '../../components/sales/SalesPerformanceSection';
+import { GlobalSalesFilterBar, SalesFilterProvider, useSalesFilters } from '../../components/sales/salesFilters';
+import { RefreshBar, SalesRefreshProvider } from '../../components/sales/salesRefresh';
+import { formatFy, formatInr, formatPeriod } from '../../components/sales/formatters';
+import { SALES_REPORTS_PATH, salesReportLink } from '../../data/salesReports';
 
-function formatCurrency(value: number) {
-  return new Intl.NumberFormat('en-IN', { style: 'currency', currency: 'INR', maximumFractionDigits: 0 }).format(value);
+/**
+ * Sales Dashboard — the default Sales landing page. Head of the page: Sales Turnover vs Target, the named units and the key
+ * position metrics, driven by the shared filter bar. Below, the original document-activity counters are kept unchanged.
+ */
+export default function SalesDashboard() {
+  return (
+    <SalesRefreshProvider>
+      <SalesFilterProvider>
+        <Dashboard />
+      </SalesFilterProvider>
+    </SalesRefreshProvider>
+  );
 }
 
-export default function SalesDashboard() {
+function Dashboard() {
+  const { applied } = useSalesFilters();
+  return (
+    <div className="space-y-4">
+      <header className="flex flex-wrap items-start justify-between gap-x-4 gap-y-2">
+        <div className="min-w-0">
+          <h1 className="text-xl font-semibold text-ink-primary leading-tight">Sales Dashboard</h1>
+          <p className="text-sm text-ink-secondary mt-0.5">
+            {formatFy(applied.to)} · {formatPeriod(applied.from, applied.to)} · Live from SAP Business One
+          </p>
+        </div>
+        <div className="flex flex-wrap items-center justify-end gap-2">
+          <RefreshBar />
+          <Link to="/sales/overview" className="btn-secondary btn-compact">Sales Overview</Link>
+          <Link to={SALES_REPORTS_PATH} className="btn-secondary btn-compact">All Reports</Link>
+          <Link to="/sales/analytics" className="btn-secondary btn-compact"><TrendingUp className="h-4 w-4" /> Analytics</Link>
+        </div>
+      </header>
+
+      <GlobalSalesFilterBar />
+      <SalesPerformanceSection />
+      <DocumentActivity />
+    </div>
+  );
+}
+
+/** The original Sales Dashboard counters (document activity), unchanged in meaning; current position, not period-based. */
+function DocumentActivity() {
   const [data, setData] = useState<SalesDashboardType | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
@@ -24,79 +66,47 @@ export default function SalesDashboard() {
       .catch((err) => setError(err?.response?.data?.message || err.message || 'Unable to load sales data.'))
       .finally(() => setLoading(false));
   }
-
   useEffect(load, []);
 
-  const header = (
-    <div className="flex flex-wrap items-center justify-between gap-3">
-      <div>
-        <h1 className="text-xl sm:text-2xl font-semibold text-ink-primary">Sales Dashboard</h1>
-        <p className="text-ink-secondary text-sm mt-0.5">Live snapshot of your sales activity</p>
-      </div>
-      <Link to="/sales/analytics" className="btn-secondary">
-        <TrendingUp className="h-4 w-4" />
-        View Analytics
-      </Link>
-    </div>
-  );
-
-  if (error) {
-    return (
-      <div className="space-y-6">
-        {header}
-        <div className="card">
-          <ErrorState message={error} onRetry={load} />
-        </div>
-      </div>
-    );
-  }
+  if (error) return <div className="panel p-4"><ErrorState message={error} onRetry={load} /></div>;
 
   return (
-    <div className="space-y-6">
-      {header}
-
-      {loading ? (
+    <section aria-labelledby="doc-h" className="space-y-2">
+      <h2 id="doc-h" className="text-sm font-semibold text-ink-primary">Document activity <span className="font-normal text-ink-tertiary text-xs">current position — not period-based</span></h2>
+      {loading || !data ? (
         <CardGridSkeleton count={4} />
       ) : (
-        <div className="grid grid-cols-2 xl:grid-cols-4 gap-4">
-          <StatCard label="Open Quotations" value={data!.openQuotations} hint={`${data!.totalQuotations} total`} icon={FileSpreadsheet} accent="slate" />
-          <StatCard label="Open Sales Orders" value={data!.openSalesOrders} hint={`${data!.totalSalesOrders} total`} icon={ShoppingCart} accent="blue" />
-          <StatCard label="Pending Deliveries" value={data!.pendingDeliveries} hint={`${data!.totalDeliveries} total`} icon={Truck} accent="green" />
-          <StatCard label="Open A/R Invoices" value={data!.openArInvoices} hint={`${data!.overdueArInvoices} overdue`} icon={FileText} accent={data!.overdueArInvoices > 0 ? 'red' : 'slate'} />
-        </div>
+        <>
+          <div className="grid grid-cols-2 xl:grid-cols-4 gap-3">
+            <StatCard variant="compact" label="Open Quotations" value={data.openQuotations} hint={`${data.totalQuotations} total`} icon={FileSpreadsheet} basis="Current position" />
+            <StatCard variant="compact" label="Open Sales Orders (documents)" value={data.openSalesOrders} hint={`${data.totalSalesOrders} total · ${formatInr(data.openSalesOrderValue)} document value`} icon={ShoppingCart} basis="Current position" definition="Whole open orders at document value including tax — a different measure from the line-level Open Sales Orders above." />
+            <StatCard variant="compact" label="Pending Deliveries" value={data.pendingDeliveries} hint={`${data.totalDeliveries} total`} icon={Truck} basis="Current position" />
+            <StatCard variant="compact" label="Open A/R Invoices" value={data.openArInvoices} hint={`${data.overdueArInvoices} overdue`} icon={FileText} basis="Current position" definition="Invoices not yet fully paid — payment status, not billing status." />
+          </div>
+          <div className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-4 gap-3">
+            <StatCard variant="compact" label="Sales This Month" value={formatInr(data.monthlySalesValue)} hint={`${data.salesOrdersThisMonth} orders`} icon={Calendar} basis="Calendar month to date" />
+            <StatCard variant="compact" label="Sales This Year" value={formatInr(data.yearlySalesValue)} hint={`${data.salesOrdersThisYear} orders`} icon={Calendar} basis="Calendar year to date" />
+            <StatCard variant="compact" label="Outstanding Customer Invoices" value={formatInr(data.outstandingReceivables)} icon={Wallet} basis="Unpaid invoices today" definition="Unpaid A/R invoices (DocTotal − PaidToDate). The journal-based Total Outstanding above is the client's ageing definition." to={salesReportLink('unpaid-invoices')} />
+            <StatCard variant="compact" label="Incoming Payments (Month)" value={formatInr(data.incomingPaymentsThisMonth)} icon={Landmark} basis="Calendar month to date" />
+          </div>
+        </>
       )}
-
-      {!loading && data && (
-        <div className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-4 gap-4">
-          <StatCard label="Sales This Month" value={formatCurrency(data.monthlySalesValue)} hint={`${data.salesOrdersThisMonth} orders`} icon={Calendar} accent="blue" />
-          <StatCard label="Sales This Year" value={formatCurrency(data.yearlySalesValue)} hint={`${data.salesOrdersThisYear} orders`} icon={Calendar} accent="slate" />
-          <StatCard label="Outstanding Receivables" value={formatCurrency(data.outstandingReceivables)} icon={Wallet} accent="amber" />
-          <StatCard label="Incoming Payments (Month)" value={formatCurrency(data.incomingPaymentsThisMonth)} icon={Landmark} accent="green" />
-        </div>
-      )}
-
-      {!loading && data && (
-        <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-          <StatCard label="Open Sales Order Value" value={formatCurrency(data.openSalesOrderValue)} icon={ShoppingCart} accent="blue" />
-        </div>
-      )}
-
-      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
-        <QuickLink to="/sales/quotations" label="Sales Quotations" />
+      <div className="grid grid-cols-2 sm:grid-cols-4 xl:grid-cols-7 gap-2">
+        <QuickLink to="/sales/quotations" label="Quotations" />
         <QuickLink to="/sales/orders" label="Sales Orders" />
         <QuickLink to="/sales/deliveries" label="Deliveries" />
         <QuickLink to="/sales/invoices" label="A/R Invoices" />
-        <QuickLink to="/sales/credit-memos" label="A/R Credit Memos" />
+        <QuickLink to="/sales/credit-memos" label="Credit Memos" />
         <QuickLink to="/sales/payments" label="Incoming Payments" />
-        <QuickLink to="/sales/analytics" label="Sales Analytics" />
+        <QuickLink to="/sales/analytics" label="Analytics" />
       </div>
-    </div>
+    </section>
   );
 }
 
 function QuickLink({ to, label }: { to: string; label: string }) {
   return (
-    <Link to={to} className="card flex items-center justify-between hover:shadow-elevated transition-shadow duration-200">
+    <Link to={to} className="panel flex items-center justify-between px-3 py-2 hover:border-brand-400 transition-colors">
       <span className="text-sm font-medium text-ink-primary">{label}</span>
       <ArrowRight className="h-4 w-4 text-ink-tertiary" />
     </Link>

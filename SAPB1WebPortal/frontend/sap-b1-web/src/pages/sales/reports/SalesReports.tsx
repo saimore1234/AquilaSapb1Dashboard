@@ -9,6 +9,11 @@ import OutstandingSection from "../../../components/sales/OutstandingSection";
 import LedgerSection from "../../../components/sales/LedgerSection";
 import AnalyticsSection from "../../../components/sales/AnalyticsSection";
 import SampleStatusSection from "../../../components/sales/SampleStatusSection";
+import { CustomersSection, UnpaidInvoicesSection, OpenPurchaseOrderLinesSection, OpenSalesOrderLinesSection, PendingDeliveriesSection, SalesAnalysisSection, SalesRegisterSection } from "../../../components/sales/DetailReports";
+import OutstandingLedgerSection from "../../../components/sales/OutstandingLedgerSection";
+import CustomerGroupSalesSection from "../../../components/sales/CustomerGroupSalesSection";
+import LostCustomersSection from "../../../components/sales/LostCustomersSection";
+import OrderExecutionSection from "../../../components/sales/OrderExecutionSection";
 import { salesReports, SALES_REPORTS_PATH } from "../../../data/salesReports";
 import {
   RefreshBar,
@@ -29,6 +34,20 @@ const reportBodies: Record<string, () => ReactElement> = {
   "customer-ledger": () => <LedgerSection />,
   "sales-analytics": () => <AnalyticsSection />,
   "sample-status": () => <SampleStatusSection />,
+  "open-sales-order-lines": () => <OpenSalesOrderLinesSection />,
+  "sales-register": () => <SalesRegisterSection />,
+  "total-outstanding": () => <OutstandingLedgerSection />,
+  "open-purchase-order-lines": () => <OpenPurchaseOrderLinesSection />,
+  "customers": () => <CustomersSection />,
+  "lost-customers": () => <LostCustomersSection />,
+  "order-execution": () => <OrderExecutionSection />,
+  "unpaid-invoices": () => <UnpaidInvoicesSection />,
+  "customer-group-sales": () => <CustomerGroupSalesSection />,
+  "pending-deliveries": () => <PendingDeliveriesSection />,
+  "sales-by-month": () => <SalesAnalysisSection by="month" />,
+  "sales-by-salesperson": () => <SalesAnalysisSection by="salesperson" />,
+  "sales-by-customer": () => <SalesAnalysisSection by="customer" />,
+  "sales-by-item": () => <SalesAnalysisSection by="item" />,
 };
 
 /** Sales → Reports: the hub listing the eight dashboard sections as reports. */
@@ -40,7 +59,7 @@ export function SalesReportsHub() {
           Sales Reports
         </h1>
         <p className="text-ink-secondary text-sm mt-0.5">
-          Each section of the Sales Dashboard, available as a full report.
+          Each section of the Sales Dashboard as a full report, plus the line-level reports that follow the client's own SAP queries. The period filter at the top applies to all of them.
         </p>
       </div>
       <div className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-3 gap-4">
