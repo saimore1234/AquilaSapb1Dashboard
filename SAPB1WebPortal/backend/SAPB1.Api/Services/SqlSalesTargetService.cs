@@ -32,6 +32,20 @@ public class SqlSalesTargetService : ISalesTargetService
 {
     private const int AllUnits = -1;
     private const int MaxLines = 200;
+    private static readonly string[] Scopes = { "Company", "Unit", "Salesperson" };
+    private static string ScopeOf(string? scope) => Scopes.FirstOrDefault(x => x.Equals(scope?.Trim(), StringComparison.OrdinalIgnoreCase)) ?? "Salesperson";
+
+    // The Scope column is added by db/007 (applied at start-up when the login may alter tables). Until it exists the service behaves exactly as
+    // before for salesperson targets and refuses Company/Unit targets with a clear message instead of failing on a missing column.
+    private static bool _scopeColumn;
+    private async Task<bool> HasScopeColumnAsync(CancellationToken ct)
+    {
+        if (_scopeColumn) return true;
+        using var db = _portal.CreateConnection();
+        _scopeColumn = await db.ExecuteScalarAsync<int>(new CommandDefinition("SELECT CASE WHEN COL_LENGTH('dbo.SalespersonTargets', 'Scope') IS NULL THEN 0 ELSE 1 END", cancellationToken: ct)) == 1;
+        return _scopeColumn;
+    }
+    private const string ScopeMissing = "Company and unit targets need the targets database upgrade: run db/007_AddTargetScope.sql once (or restart the API with a login that may alter tables).";
     private static readonly Regex FyPattern = new(@"^(\d{4})-(\d{2})$", RegexOptions.Compiled);
     private static readonly string[] PeriodTypes = { "Monthly", "Quarterly", "Annual", "Custom" };
     private static readonly string[] Statuses = { "Draft", "Submitted", "Approved", "Rejected", "Superseded" };
@@ -174,7 +188,11 @@ public class SqlSalesTargetService : ISalesTargetService
             end = start.AddMonths(step).AddDays(-1);
         }
 
-        if (r.SapSlpCode <= 0) return "Select a salesperson.";
+        var scope = ScopeOf(r.Scope);
+        if (!string.IsNullOrWhiteSpace(r.Scope) && !Scopes.Any(x => x.Equals(r.Scope.Trim(), StringComparison.OrdinalIgnoreCase))) return "Scope must be Company, Unit or Salesperson.";
+        if (scope == "Salesperson" && r.SapSlpCode <= 0) return "Select a salesperson.";
+        if (scope == "Unit" && r.UnitCode < 0) return "Select a unit.";
+        if (scope != "Salesperson" && r.Lines is { Count: > 0 }) return "Item rows are only available on salesperson targets.";
         if (r.UnitCode != AllUnits && r.UnitCode < 0) return "Select a valid unit.";
         if (!string.IsNullOrWhiteSpace(r.CurrencyCode) && !r.CurrencyCode.Equals("INR", StringComparison.OrdinalIgnoreCase)) return "Only INR targets are supported.";
         if (r.Remarks is { Length: > 500 }) return "Remarks are limited to 500 characters.";
@@ -230,7 +248,7 @@ public class SqlSalesTargetService : ISalesTargetService
     // ------------------------------------------------------------------
     // Reads
     // ------------------------------------------------------------------
-    private const string TargetColumns = @"
+    private string TargetColumns => (_scopeColumn ? "t.Scope, " : "'Salesperson' AS Scope, ") + @"
         t.Id, t.SapSlpCode, t.SalespersonName, t.UnitCode, t.UnitName, t.FinancialYear, t.TargetPeriodType AS PeriodType,
         t.PeriodStartDate AS PeriodStart, t.PeriodEndDate AS PeriodEnd, t.TargetAmount, t.CurrencyCode, t.HasItems, t.Remarks, t.Status,
         t.RevisionOfId, t.ReviewRemarks, t.CreatedBy, t.CreatedAt, t.UpdatedBy, t.UpdatedAt, t.SubmittedBy, t.SubmittedAt,
@@ -242,6 +260,9 @@ public class SqlSalesTargetService : ISalesTargetService
     {
         var status = Statuses.FirstOrDefault(s => s.Equals(q.Status, StringComparison.OrdinalIgnoreCase));
         var periodType = PeriodTypes.FirstOrDefault(s => s.Equals(q.PeriodType, StringComparison.OrdinalIgnoreCase));
+        var scopeFilter = ScopeOf(q.Scope);
+        var hasScope = await HasScopeColumnAsync(ct);
+        if (!hasScope && scopeFilter != "Salesperson") return new SalesTargetListDto { IncludeTax = q.IncludeTax };
         var search = string.IsNullOrWhiteSpace(q.Search) ? null : q.Search.Trim();
         var item = string.IsNullOrWhiteSpace(q.Item) ? null : q.Item.Trim();
 
@@ -252,7 +273,7 @@ public class SqlSalesTargetService : ISalesTargetService
             all = (await db.QueryAsync<SalesTargetDto>(new CommandDefinition($@"
                 SELECT TOP 5000 {TargetColumns}
                 FROM dbo.SalespersonTargets t
-                WHERE t.CompanyCode = @Company
+                WHERE t.CompanyCode = @Company{(hasScope ? " AND t.Scope = @Scope" : "")}
                   AND (@FY IS NULL OR t.FinancialYear = @FY)
                   AND (@PT IS NULL OR t.TargetPeriodType = @PT)
                   AND (@Unit IS NULL OR t.UnitCode = @Unit)
@@ -265,6 +286,7 @@ public class SqlSalesTargetService : ISalesTargetService
                 ORDER BY t.PeriodStartDate DESC, t.SalespersonName, t.Id DESC", new
             {
                 Company = _company.CompanyCode,
+                Scope = scopeFilter,
                 FY = string.IsNullOrWhiteSpace(q.FinancialYear) ? null : q.FinancialYear.Trim(),
                 PT = periodType,
                 Unit = q.Unit,
@@ -306,6 +328,7 @@ public class SqlSalesTargetService : ISalesTargetService
 
     public async Task<SalesTargetDetailDto?> GetAsync(int id, bool includeTax, CancellationToken ct = default)
     {
+        await HasScopeColumnAsync(ct);
         using var db = _portal.CreateConnection();
         var target = await db.QuerySingleOrDefaultAsync<SalesTargetDto>(new CommandDefinition(
             $"SELECT {TargetColumns} FROM dbo.SalespersonTargets t WHERE t.Id = @Id AND t.CompanyCode = @Company",
@@ -392,6 +415,20 @@ public class SqlSalesTargetService : ISalesTargetService
                 GROUP BY a.SlpCode, a.LocCode, a.ItemCode, CAST(a.DocDate AS date)", ip, cancellationToken: ct))).ToList();
         }
 
+        // Company / unit targets compare ALL salespersons' sales (company: all units except the default-excluded locations, as on the dashboard).
+        var allAmounts = new List<DayAmount>();
+        var excluded = new HashSet<int>();
+        if (plainRows.Any(r => r.Scope != "Salesperson"))
+        {
+            allAmounts = (await db.QueryAsync<DayAmount>(new CommandDefinition($@"
+                {cte}
+                SELECT 0 AS SlpCode, a.LocCode, CAST(a.DocDate AS date) AS D, SUM(a.Amt) AS Amt
+                FROM alloc a GROUP BY a.LocCode, CAST(a.DocDate AS date)", p, cancellationToken: ct))).ToList();
+            var excludedNames = (_config.GetSection($"SalesTurnover:DefaultExcludedLocations:{_company.CompanyCode}").Get<string[]>() ?? Array.Empty<string>()).Select(Norm).ToHashSet();
+            var locs = await db.QueryAsync<(int Code, string Name)>(new CommandDefinition("SELECT Code, Location FROM OLCT", cancellationToken: ct));
+            excluded = locs.Where(l => excludedNames.Contains(Norm(l.Name))).Select(l => l.Code).ToHashSet();
+        }
+
         async Task<(List<DayCount> ByUnit, List<DayCount> Total)> CountsAsync(string header, string line)
         {
             var byUnit = (await db.QueryAsync<DayCount>(new CommandDefinition($@"
@@ -413,6 +450,16 @@ public class SqlSalesTargetService : ISalesTargetService
         {
             bool InPeriod(DateTime d) => d >= r.PeriodStart.Date && d <= r.PeriodEnd.Date;
             bool InUnit(int? loc) => r.UnitCode == AllUnits || loc == r.UnitCode;
+
+            if (r.Scope != "Salesperson")
+            {
+                r.ActualSales = Math.Round(allAmounts.Where(a => InPeriod(a.D)
+                    && (r.UnitCode == AllUnits ? (a.LocCode is null || !excluded.Contains(a.LocCode.Value)) : a.LocCode == r.UnitCode)).Sum(a => a.Amt), 0);
+                r.AchievementPct = r.TargetAmount > 0 ? Math.Round(r.ActualSales / r.TargetAmount * 100, 2) : null;
+                r.RemainingTarget = Math.Max(r.TargetAmount - r.ActualSales, 0);
+                r.Variance = r.ActualSales - r.TargetAmount;
+                continue;
+            }
 
             r.SalesOrders = r.UnitCode == AllUnits
                 ? orders.Total.Where(c => c.SlpCode == r.SapSlpCode && InPeriod(c.D)).Sum(c => c.N)
@@ -451,6 +498,80 @@ public class SqlSalesTargetService : ISalesTargetService
     }
 
     // ------------------------------------------------------------------
+    // Target-vs-actual by month / quarter / year (Target Management page and its chart)
+    // ------------------------------------------------------------------
+    private class MonthLoc { public DateTime M { get; set; } public int? LocCode { get; set; } public decimal Amt { get; set; } }
+    private class ApprovedRow { public string PT { get; set; } = ""; public DateTime S { get; set; } public decimal Amt { get; set; } }
+
+    public async Task<TargetPerformanceDto> GetPerformanceAsync(TargetPerformanceQuery q, CancellationToken ct = default)
+    {
+        var scope = ScopeOf(q.Scope);
+        var m = FyPattern.Match(q.FinancialYear ?? "");
+        var y1 = m.Success && int.Parse(m.Groups[2].Value) == (int.Parse(m.Groups[1].Value) + 1) % 100 ? int.Parse(m.Groups[1].Value) : FyStartYear(DateTime.Today);
+        var start = new DateTime(y1, 4, 1);
+        var end = start.AddYears(1).AddDays(-1);
+        var unit = scope == "Company" ? AllUnits : (q.Unit ?? AllUnits);
+        var slp = scope == "Salesperson" ? (q.Salesperson ?? 0) : 0;
+        var dto = new TargetPerformanceDto { Scope = scope, FinancialYear = FyLabel(y1), IncludeTax = false };
+
+        dto.EntityLabel = scope == "Company" ? "Company (all units)"
+            : scope == "Unit" ? (unit == AllUnits ? "Select a unit" : (await FindUnitNameAsync(unit, ct) is string un ? UnitLabels().GetValueOrDefault(Norm(un)) ?? un : $"Unit {unit}"))
+            : (slp == 0 ? "Select a salesperson" : (await FindSalespersonAsync(slp, ct))?.Name ?? $"Salesperson {slp}") + (unit == AllUnits ? " · all units" : "");
+
+        var approved = new List<ApprovedRow>();
+        var hasScope = await HasScopeColumnAsync(ct);
+        if ((hasScope || scope == "Salesperson") && !(scope == "Unit" && unit == AllUnits) && !(scope == "Salesperson" && slp == 0))
+        {
+            using var pdb = _portal.CreateConnection();
+            approved = (await pdb.QueryAsync<ApprovedRow>(new CommandDefinition($@"
+                SELECT TargetPeriodType AS PT, PeriodStartDate AS S, TargetAmount AS Amt FROM dbo.SalespersonTargets
+                WHERE CompanyCode = @Company AND Status = 'Approved' AND HasItems = 0 AND SapSlpCode = @Slp AND UnitCode = @Unit
+                  AND PeriodStartDate >= @Start AND PeriodEndDate <= @End{(hasScope ? " AND Scope = @Scope" : "")}",
+                new { Company = _company.CompanyCode, Slp = slp, Unit = unit, Start = start, End = end, Scope = scope }, cancellationToken: ct))).ToList();
+        }
+
+        var actuals = new List<MonthLoc>();
+        var excluded = new HashSet<int>();
+        using (var db = _sap.CreateConnection())
+        {
+            var p = new DynamicParameters();
+            p.Add("From", start); p.Add("To", end); p.Add("Slp", slp);
+            actuals = (await db.QueryAsync<MonthLoc>(new CommandDefinition($@"
+                WITH alloc AS ({SalesAmount.NetOfCreditNotesRows(false)})
+                SELECT DATEFROMPARTS(YEAR(a.DocDate), MONTH(a.DocDate), 1) AS M, a.LocCode, SUM(a.Amt) AS Amt
+                FROM alloc a WHERE (@Slp = 0 OR a.SlpCode = @Slp)
+                GROUP BY DATEFROMPARTS(YEAR(a.DocDate), MONTH(a.DocDate), 1), a.LocCode", p, cancellationToken: ct))).ToList();
+            if (scope == "Company")
+            {
+                var excludedNames = (_config.GetSection($"SalesTurnover:DefaultExcludedLocations:{_company.CompanyCode}").Get<string[]>() ?? Array.Empty<string>()).Select(Norm).ToHashSet();
+                var locs = await db.QueryAsync<(int Code, string Name)>(new CommandDefinition("SELECT Code, Location FROM OLCT", cancellationToken: ct));
+                excluded = locs.Where(l => excludedNames.Contains(Norm(l.Name))).Select(l => l.Code).ToHashSet();
+            }
+        }
+        decimal ActualIn(DateTime from, DateTime to) => actuals.Where(a => a.M >= from && a.M <= to
+            && (scope == "Company" ? (a.LocCode is null || !excluded.Contains(a.LocCode.Value)) : unit == AllUnits || a.LocCode == unit)).Sum(a => a.Amt);
+
+        PeriodPerformanceDto Build(string label, DateTime s, DateTime e, string periodType)
+        {
+            var row = new PeriodPerformanceDto { Label = label, Start = s, End = e, Actual = Math.Round(ActualIn(new DateTime(s.Year, s.Month, 1), e), 0) };
+            var t = approved.Where(a => a.PT == periodType && a.S.Date == s.Date).Select(a => (decimal?)a.Amt).FirstOrDefault();
+            if (t is > 0)
+            {
+                row.Target = t;
+                row.AchievementPct = Math.Round(row.Actual / t.Value * 100, 2);
+                row.Remaining = Math.Max(t.Value - row.Actual, 0);
+                row.Variance = row.Actual - t.Value;
+            }
+            return row;
+        }
+        for (var i = 0; i < 12; i++) { var s = start.AddMonths(i); dto.Months.Add(Build(s.ToString("MMM yyyy"), s, s.AddMonths(1).AddDays(-1), "Monthly")); }
+        for (var i = 0; i < 4; i++) { var s = start.AddMonths(i * 3); dto.Quarters.Add(Build($"Q{i + 1} (" + s.ToString("MMM") + "–" + s.AddMonths(2).ToString("MMM") + ")", s, s.AddMonths(3).AddDays(-1), "Quarterly")); }
+        dto.Year = Build("FY " + dto.FinancialYear, start, end, "Annual");
+        dto.Note = "Actual = A/R invoices less credit memos, excluding tax (the basis targets are set on). Each period is compared only with the approved target of that exact period type; a period without one shows \"Not configured\". Quarterly and annual targets are not spread over months.";
+        return dto;
+    }
+
+    // ------------------------------------------------------------------
     // Writes (portal DB, transactional, audited)
     // ------------------------------------------------------------------
     private static async Task AuditAsync(IDbConnection db, IDbTransaction tx, int targetId, string company, string action, string user, string? detail, CancellationToken ct) =>
@@ -458,11 +579,43 @@ public class SqlSalesTargetService : ISalesTargetService
             "INSERT INTO dbo.SalespersonTargetAudit (TargetId, CompanyCode, Action, PerformedBy, Detail) VALUES (@TargetId, @Company, @Action, @User, @Detail)",
             new { TargetId = targetId, Company = company, Action = action, User = user, Detail = detail }, transaction: tx, cancellationToken: ct));
 
+    /// <summary>Company/Unit targets have no salesperson: the sentinel code 0 is stored and the unit is forced (all units / the chosen unit).</summary>
+    private static void Normalize(SaveSalesTargetRequest r)
+    {
+        r.Scope = ScopeOf(r.Scope);
+        if (r.Scope == "Company") { r.SapSlpCode = 0; r.UnitCode = AllUnits; }
+        else if (r.Scope == "Unit") r.SapSlpCode = 0;
+    }
+
+    private async Task<(string Name, bool Active)> OwnerAsync(SaveSalesTargetRequest r, string? unitName, CancellationToken ct)
+    {
+        if (r.Scope == "Company") return ("Company (all units)", true);
+        if (r.Scope == "Unit") return (unitName ?? $"Unit {r.UnitCode}", true);
+        return (await FindSalespersonAsync(r.SapSlpCode, ct))!.Value;
+    }
+
+    /// <summary>Live amount-only targets of the same owner may not overlap in dates (e.g. a monthly and an annual target would double count).</summary>
+    private async Task<string?> FindPeriodOverlapAsync(IDbConnection db, IDbTransaction tx, int? selfId, int? revisionOfId, SaveSalesTargetRequest r, DateTime start, DateTime end, CancellationToken ct)
+    {
+        if (!await HasScopeColumnAsync(ct)) return null;
+        var hit = await db.QueryFirstOrDefaultAsync<int?>(new CommandDefinition(@"
+            SELECT TOP 1 t.Id FROM dbo.SalespersonTargets t
+            WHERE t.CompanyCode = @Company AND t.Scope = @Scope AND t.SapSlpCode = @Slp AND t.HasItems = 0
+              AND t.Status IN ('Draft','Submitted','Approved') AND (@Self IS NULL OR t.Id <> @Self) AND (@Rev IS NULL OR t.Id <> @Rev)
+              AND (t.UnitCode = @Unit OR (@Scope = 'Salesperson' AND (t.UnitCode = -1 OR @Unit = -1)))
+              AND t.PeriodStartDate <= @End AND t.PeriodEndDate >= @Start
+            ORDER BY t.Id", new { Company = _company.CompanyCode, Scope = r.Scope, Slp = r.SapSlpCode, Unit = r.UnitCode, Self = selfId, Rev = revisionOfId, Start = start, End = end }, transaction: tx, cancellationToken: ct));
+        return hit is null ? null : $"Target #{hit} already covers part of these dates for the same {r.Scope!.ToLowerInvariant()} target; overlapping targets would be counted twice. Edit or reject it first.";
+    }
+
     private async Task<SalesTargetResult?> ResolveReferencesAsync(SaveSalesTargetRequest r, bool requireActive, CancellationToken ct)
     {
-        var sp = await FindSalespersonAsync(r.SapSlpCode, ct);
-        if (sp is null) return SalesTargetResult.Fail(400, "That salesperson does not exist in SAP.");
-        if (requireActive && !sp.Value.Active) return SalesTargetResult.Fail(400, "This salesperson is inactive in SAP; new targets can't be assigned to them.");
+        if (ScopeOf(r.Scope) == "Salesperson")
+        {
+            var sp = await FindSalespersonAsync(r.SapSlpCode, ct);
+            if (sp is null) return SalesTargetResult.Fail(400, "That salesperson does not exist in SAP.");
+            if (requireActive && !sp.Value.Active) return SalesTargetResult.Fail(400, "This salesperson is inactive in SAP; new targets can't be assigned to them.");
+        }
         if (r.UnitCode != AllUnits && await FindUnitNameAsync(r.UnitCode, ct) is null) return SalesTargetResult.Fail(400, "That unit does not exist in SAP.");
         return null;
     }
@@ -487,10 +640,13 @@ public class SqlSalesTargetService : ISalesTargetService
     {
         var error = ValidateShape(r, out var start, out var end, out var fy);
         if (error is not null) return SalesTargetResult.Fail(400, error);
+        Normalize(r);
+        var hasScope = await HasScopeColumnAsync(ct);
+        if (!hasScope && r.Scope != "Salesperson") return SalesTargetResult.Fail(503, ScopeMissing);
         var bad = await ResolveReferencesAsync(r, requireActive: true, ct);
         if (bad is not null) return bad;
-        var sp = (await FindSalespersonAsync(r.SapSlpCode, ct))!.Value;
         var unitName = r.UnitCode == AllUnits ? null : await FindUnitNameAsync(r.UnitCode, ct);
+        var sp = await OwnerAsync(r, unitName, ct);
 
         var itemRows = new List<(SaveSalesTargetLineRequest Line, SapItem Item)>();
         if (r.Lines is { Count: > 0 })
@@ -511,14 +667,19 @@ public class SqlSalesTargetService : ISalesTargetService
                 var overlap = await FindItemOverlapAsync(db, tx, null, null, r, start, end, itemRows.Select(x => x.Item.ItemCode), ct);
                 if (overlap is not null) { tx.Rollback(); return SalesTargetResult.Fail(409, overlap); }
             }
+            else
+            {
+                var overlap = await FindPeriodOverlapAsync(db, tx, null, null, r, start, end, ct);
+                if (overlap is not null) { tx.Rollback(); return SalesTargetResult.Fail(409, overlap); }
+            }
             var id = await db.ExecuteScalarAsync<int>(new CommandDefinition(@"
                 INSERT INTO dbo.SalespersonTargets
                     (CompanyCode, SapSlpCode, SalespersonName, UnitCode, UnitName, FinancialYear, TargetPeriodType, PeriodStartDate, PeriodEndDate,
-                     TargetAmount, CurrencyCode, HasItems, Remarks, Status, CreatedBy)
+                     TargetAmount, CurrencyCode, HasItems, Remarks, Status, CreatedBy" + (hasScope ? ", Scope" : "") + @")
                 OUTPUT INSERTED.Id
-                VALUES (@Company, @Slp, @Name, @Unit, @UnitName, @FY, @PT, @Start, @End, @Amount, 'INR', @HasItems, @Remarks, 'Draft', @User)", new
+                VALUES (@Company, @Slp, @Name, @Unit, @UnitName, @FY, @PT, @Start, @End, @Amount, 'INR', @HasItems, @Remarks, 'Draft', @User" + (hasScope ? ", @Scope" : "") + @")", new
             {
-                Company = _company.CompanyCode, Slp = r.SapSlpCode, Name = sp.Name, Unit = r.UnitCode, UnitName = unitName, FY = fy,
+                Scope = r.Scope, Company = _company.CompanyCode, Slp = r.SapSlpCode, Name = sp.Name, Unit = r.UnitCode, UnitName = unitName, FY = fy,
                 PT = r.PeriodType, Start = start, End = end, Amount = amount, HasItems = itemRows.Count > 0, Remarks = r.Remarks?.Trim(), User = user
             }, transaction: tx, cancellationToken: ct));
             await InsertLinesAsync(db, tx, id, itemRows, ct);
@@ -537,6 +698,9 @@ public class SqlSalesTargetService : ISalesTargetService
     {
         var error = ValidateShape(r, out var start, out var end, out var fy);
         if (error is not null) return SalesTargetResult.Fail(400, error);
+        Normalize(r);
+        var hasScope = await HasScopeColumnAsync(ct);
+        if (!hasScope && r.Scope != "Salesperson") return SalesTargetResult.Fail(503, ScopeMissing);
 
         using var db = _portal.CreateConnection();
         db.Open();
@@ -558,8 +722,8 @@ public class SqlSalesTargetService : ISalesTargetService
             // Inactive salespersons are only acceptable if this draft already belongs to them.
             var bad = await ResolveReferencesAsync(r, requireActive: current.Value.SapSlpCode != r.SapSlpCode, ct);
             if (bad is not null) { tx.Rollback(); return bad; }
-            var sp = (await FindSalespersonAsync(r.SapSlpCode, ct))!.Value;
             var unitName = r.UnitCode == AllUnits ? null : await FindUnitNameAsync(r.UnitCode, ct);
+            var sp = await OwnerAsync(r, unitName, ct);
 
             var itemRows = new List<(SaveSalesTargetLineRequest Line, SapItem Item)>();
             if (r.Lines is { Count: > 0 })
@@ -573,16 +737,21 @@ public class SqlSalesTargetService : ISalesTargetService
                 var overlap = await FindItemOverlapAsync(db, tx, id, current.Value.RevisionOfId, r, start, end, itemRows.Select(x => x.Item.ItemCode), ct);
                 if (overlap is not null) { tx.Rollback(); return SalesTargetResult.Fail(409, overlap); }
             }
+            if (itemRows.Count == 0)
+            {
+                var overlap = await FindPeriodOverlapAsync(db, tx, id, current.Value.RevisionOfId, r, start, end, ct);
+                if (overlap is not null) { tx.Rollback(); return SalesTargetResult.Fail(409, overlap); }
+            }
             var amount = itemRows.Count > 0 ? itemRows.Sum(x => x.Line.TargetAmount) : r.TargetAmount;
 
             await db.ExecuteAsync(new CommandDefinition(@"
                 UPDATE dbo.SalespersonTargets
-                SET SapSlpCode = @Slp, SalespersonName = @Name, UnitCode = @Unit, UnitName = @UnitName, FinancialYear = @FY, TargetPeriodType = @PT,
+                SET " + (hasScope ? "Scope = @Scope, " : "") + @"SapSlpCode = @Slp, SalespersonName = @Name, UnitCode = @Unit, UnitName = @UnitName, FinancialYear = @FY, TargetPeriodType = @PT,
                     PeriodStartDate = @Start, PeriodEndDate = @End, TargetAmount = @Amount, HasItems = @HasItems, Remarks = @Remarks,
                     Status = 'Draft', ReviewRemarks = NULL, UpdatedBy = @User, UpdatedAt = SYSUTCDATETIME()
                 WHERE Id = @Id AND CompanyCode = @Company", new
             {
-                Id = id, Company = _company.CompanyCode, Slp = r.SapSlpCode, Name = sp.Name, Unit = r.UnitCode, UnitName = unitName, FY = fy,
+                Scope = r.Scope, Id = id, Company = _company.CompanyCode, Slp = r.SapSlpCode, Name = sp.Name, Unit = r.UnitCode, UnitName = unitName, FY = fy,
                 PT = r.PeriodType, Start = start, End = end, Amount = amount, HasItems = itemRows.Count > 0, Remarks = r.Remarks?.Trim(), User = user
             }, transaction: tx, cancellationToken: ct));
             await db.ExecuteAsync(new CommandDefinition("DELETE FROM dbo.SalespersonTargetLines WHERE TargetId = @Id", new { Id = id }, transaction: tx, cancellationToken: ct));
@@ -676,6 +845,7 @@ public class SqlSalesTargetService : ISalesTargetService
 
     public async Task<SalesTargetResult> ReviseAsync(int id, string user, CancellationToken ct = default)
     {
+        await HasScopeColumnAsync(ct);
         using var db = _portal.CreateConnection();
         db.Open();
         using var tx = db.BeginTransaction();
@@ -687,8 +857,11 @@ public class SqlSalesTargetService : ISalesTargetService
             if (src is null) { tx.Rollback(); return SalesTargetResult.Fail(404, "Target not found."); }
             if (src.Status != "Approved") { tx.Rollback(); return SalesTargetResult.Fail(409, "Only an approved target can be revised."); }
 
-            var sp = await FindSalespersonAsync(src.SapSlpCode, ct);
-            if (sp is null || !sp.Value.Active) { tx.Rollback(); return SalesTargetResult.Fail(400, "This salesperson is inactive in SAP; the target can't be revised."); }
+            if (src.Scope == "Salesperson")
+            {
+                var sp = await FindSalespersonAsync(src.SapSlpCode, ct);
+                if (sp is null || !sp.Value.Active) { tx.Rollback(); return SalesTargetResult.Fail(400, "This salesperson is inactive in SAP; the target can't be revised."); }
+            }
 
             // Only one open revision per approved target (the unique index would also stop the duplicate).
             var open = await db.ExecuteScalarAsync<int>(new CommandDefinition(
@@ -700,10 +873,10 @@ public class SqlSalesTargetService : ISalesTargetService
             var newId = await db.ExecuteScalarAsync<int>(new CommandDefinition(@"
                 INSERT INTO dbo.SalespersonTargets
                     (CompanyCode, SapSlpCode, SalespersonName, UnitCode, UnitName, FinancialYear, TargetPeriodType, PeriodStartDate, PeriodEndDate,
-                     TargetAmount, CurrencyCode, HasItems, Remarks, Status, RevisionOfId, CreatedBy)
+                     TargetAmount, CurrencyCode, HasItems, Remarks, Status, RevisionOfId, CreatedBy" + (await HasScopeColumnAsync(ct) ? ", Scope" : "") + @")
                 OUTPUT INSERTED.Id
                 SELECT CompanyCode, SapSlpCode, SalespersonName, UnitCode, UnitName, FinancialYear, TargetPeriodType, PeriodStartDate, PeriodEndDate,
-                       TargetAmount, CurrencyCode, HasItems, Remarks, 'Draft', Id, @User
+                       TargetAmount, CurrencyCode, HasItems, Remarks, 'Draft', Id, @User" + (await HasScopeColumnAsync(ct) ? ", Scope" : "") + @"
                 FROM dbo.SalespersonTargets WHERE Id = @Id AND CompanyCode = @Company", new { Id = id, Company = _company.CompanyCode, User = user },
                 transaction: tx, cancellationToken: ct));
             await db.ExecuteAsync(new CommandDefinition(@"

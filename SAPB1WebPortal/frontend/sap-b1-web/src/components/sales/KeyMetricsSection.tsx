@@ -27,8 +27,10 @@ export default function KeyMetricsSection({ reportTo }: { reportTo?: string }) {
   const [ledgerErr, setLedgerErr] = useState(false);
   useEffect(() => {
     setOpenSo(null); setOpenSoErr(false); setLedger(null); setLedgerErr(false);
-    getOpenSalesOrderLines({ dateFrom: applied.from, dateTo: applied.to, page: 1, pageSize: 1 }).then((r) => setOpenSo(r.totals)).catch(() => setOpenSoErr(true));
-    getOutstandingLedger({ asOf: applied.to, page: 1, pageSize: 1 }).then(setLedger).catch(() => setLedgerErr(true));
+    let live = true;
+    getOpenSalesOrderLines({ dateFrom: applied.from, dateTo: applied.to, page: 1, pageSize: 1 }).then((r) => { if (live) setOpenSo(r.totals); }).catch(() => { if (live) setOpenSoErr(true); });
+    getOutstandingLedger({ asOf: applied.to, page: 1, pageSize: 1 }).then((l) => { if (live) setLedger(l); }).catch(() => { if (live) setLedgerErr(true); });
+    return () => { live = false; };
   }, [applied.from, applied.to]);
 
   if (error) return <div className="panel p-4"><ErrorState message={error} onRetry={reload} /></div>;

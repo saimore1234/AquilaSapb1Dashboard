@@ -47,6 +47,17 @@ public class SalesController : ControllerBase
         return Ok(ApiResponse<SalesPerformanceDto>.Ok(await _performance.GetAsync(query, ct)));
     }
 
+    /// <summary>Document activity under the shared dashboard filters (period-based totals; current-position open/pending counts).</summary>
+    [HttpGet("dashboard/activity")]
+    public async Task<ActionResult<ApiResponse<SalesActivityDto>>> GetActivity([FromQuery] ActivityQuery query, CancellationToken ct)
+    {
+        if (query.DateFrom.HasValue && query.DateTo.HasValue && query.DateFrom.Value.Date > query.DateTo.Value.Date)
+            return BadRequest(ApiResponse<SalesActivityDto>.Fail("From Date must be on or before To Date."));
+        if (!SAPB1.Api.Services.ProductCategories.IsValid(query.ProductCategory))
+            return BadRequest(ApiResponse<SalesActivityDto>.Fail("Unknown product category."));
+        return Ok(ApiResponse<SalesActivityDto>.Ok(await _performance.GetActivityAsync(query, ct)));
+    }
+
     [HttpGet("analytics")]
     public async Task<ActionResult<ApiResponse<SalesAnalyticsDto>>> GetAnalytics(CancellationToken ct)
     {

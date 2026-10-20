@@ -48,7 +48,9 @@ export default function SalesPerformanceSection() {
   useEffect(() => {
     setUnitCustomers(null);
     if (!applied.unit) return;
-    getCustomersReport({ dateFrom: applied.from, dateTo: applied.to, unit: Number(applied.unit), page: 1, pageSize: 1 }).then((r) => setUnitCustomers(r.totals.customers)).catch(() => setUnitCustomers(null));
+    let live = true;
+    getCustomersReport({ dateFrom: applied.from, dateTo: applied.to, unit: Number(applied.unit), page: 1, pageSize: 1 }).then((r) => { if (live) setUnitCustomers(r.totals.customers); }).catch(() => { if (live) setUnitCustomers(null); });
+    return () => { live = false; };
   }, [applied.unit, applied.from, applied.to]);
 
   useEffect(() => {
@@ -56,6 +58,7 @@ export default function SalesPerformanceSection() {
     seenTick.current = tick;
     if (!silent) { setLoading(true); setData(null); } // never leave the previous selection's numbers on screen
     setError(null);
+    const ctl = new AbortController(); // a newer selection cancels this request
     getSalesPerformance({
       dateFrom: applied.from,
       dateTo: applied.to,
@@ -65,19 +68,20 @@ export default function SalesPerformanceSection() {
       customerGroup: applied.customerGroup ? Number(applied.customerGroup) : undefined,
       salesperson: applied.salesperson ? Number(applied.salesperson) : undefined,
       productCategory: applied.category || undefined
-    })
-      .then((d) => { setData(d); markUpdated(); })
-      .catch((err) => setError(err?.response?.data?.message || err.message || 'Unable to load sales performance.'))
-      .finally(() => setLoading(false));
+    }, ctl.signal)
+      .then((d) => { if (ctl.signal.aborted) return; setData(d); markUpdated(); setLoading(false); })
+      .catch((err) => { if (ctl.signal.aborted || err?.code === 'ERR_CANCELED') return; setError(err?.response?.data?.message || err.message || 'Unable to load sales performance.'); setLoading(false); });
+    return () => ctl.abort();
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [applied, reload, tick]);
 
   if (error) return <div className="panel p-4"><ErrorState message={error} onRetry={() => setReload((n) => n + 1)} /></div>;
 
   const t = data?.target ?? 0;
-  const achieved = data ? (data.targetConfigured ? Math.min(Math.max(data.actual, 0), t) : Math.max(data.actual, 0)) : 0;
-  const remaining = data && data.targetConfigured ? Math.max(t - data.actual, 0) : 0;
-  const over = !!data && data.targetConfigured && data.actual > t;
+  const cmp = data ? data.comparisonActual : 0; // ex-tax actual: the basis targets are set on
+  const achieved = data ? (data.targetConfigured ? Math.min(Math.max(cmp, 0), t) : Math.max(data.actual, 0)) : 0;
+  const remaining = data && data.targetConfigured ? Math.max(t - cmp, 0) : 0;
+  const over = !!data && data.targetConfigured && cmp > t;
   const pie = data?.targetConfigured
     ? [{ name: 'Achieved sales', value: achieved }, { name: 'Remaining target', value: remaining }]
     : [{ name: 'Actual sales (no target configured)', value: achieved }];
@@ -106,9 +110,9 @@ export default function SalesPerformanceSection() {
             ) : (
               <div className="grid grid-cols-2 sm:grid-cols-3 xl:grid-cols-5 gap-2">
                 <Metric label="Actual turnover" value={formatInr(data.actual)} sub={`${formatLongDate(data.dateFrom.slice(0, 10))} – ${formatLongDate(data.dateTo.slice(0, 10))}`} />
-                <Metric label="Target" value={data.targetConfigured ? formatInr(data.target) : 'Not configured'} sub={data.targetConfigured ? `${formatCount(data.targetCount)} approved target(s)` : 'No approved target for this selection'} tone={data.targetConfigured ? undefined : 'text-ink-tertiary'} />
+                <Metric label="Target" value={data.targetConfigured ? formatInr(data.target) : 'Not configured'} sub={data.targetConfigured ? `${data.targetLevel ?? 'Approved target'} · ${formatCount(data.targetCount)} approved` : 'No approved target for this selection'} tone={data.targetConfigured ? undefined : 'text-ink-tertiary'} />
                 <Metric label="Achievement" value={data.targetConfigured ? formatPct(data.achievementPct) : '–'} tone={data.targetConfigured ? (over ? 'text-success' : undefined) : 'text-ink-tertiary'} sub="Actual ÷ target" />
-                <Metric label={over ? 'Over target by' : 'Remaining target'} value={data.targetConfigured ? formatInr(over ? data.actual - t : data.remaining) : '–'} tone={data.targetConfigured ? undefined : 'text-ink-tertiary'} sub={data.targetConfigured ? (over ? 'Target exceeded' : 'Target − actual') : undefined} />
+                <Metric label={over ? 'Over target by' : 'Remaining target'} value={data.targetConfigured ? formatInr(over ? cmp - t : data.remaining) : '–'} tone={data.targetConfigured ? undefined : 'text-ink-tertiary'} sub={data.targetConfigured ? (over ? 'Target exceeded' : 'Target − actual') : undefined} />
                 <Metric label="Variance" value={data.targetConfigured ? formatInr(data.variance) : '–'} tone={data.targetConfigured ? amountTone(data.variance, { zero: true }) : 'text-ink-tertiary'} sub="Actual − target" />
               </div>
             )}
@@ -126,7 +130,7 @@ export default function SalesPerformanceSection() {
                 <p><span className="font-medium text-ink-primary">What is compared:</span> {data.targetBasis}</p>
                 <p className="flex flex-wrap gap-x-4">
                   <Link className="font-medium text-brand-600 dark:text-brand-400 hover:underline" to={salesReportLink('sales-register', { unit: applied.unit || undefined })}>Actual: Sales Register →</Link>
-                  <Link className="font-medium text-brand-600 dark:text-brand-400 hover:underline" to="/sales/targets">Targets: Salesperson Targets →</Link>
+                  <Link className="font-medium text-brand-600 dark:text-brand-400 hover:underline" to="/sales/target-management">Targets: Target Management →</Link>
                 </p>
               </div>
             )}

@@ -53,10 +53,12 @@ export default function OutstandingLedgerSection() {
     if (!silent) { setLoading(true); setData(null); }
     setError(null);
     const q = { asOf, customer: customer || undefined, branch: branch ? Number(branch) : undefined };
+    let live = true;
     getOutstandingLedger({ ...q, page, pageSize: PAGE })
-      .then((d) => { setData(d); markUpdated(); })
-      .catch((err) => setError(err?.response?.data?.message || err.message || 'Unable to load total outstanding.'))
-      .finally(() => setLoading(false));
+      .then((d) => { if (!live) return; setData(d); markUpdated(); })
+      .catch((err) => { if (live) setError(err?.response?.data?.message || err.message || 'Unable to load total outstanding.'); })
+      .finally(() => { if (live) setLoading(false); });
+    return () => { live = false; };
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [asOf, customer, branch, page, reload, tick]);
 
@@ -66,9 +68,11 @@ export default function OutstandingLedgerSection() {
   }, [asOf, customer, branch]);
   useEffect(() => {
     if (!customer && !branch) { setLines(null); return; }
+    let live = true;
     getOutstandingLedgerLines({ asOf, customer: customer || undefined, branch: branch ? Number(branch) : undefined, page: linePage, pageSize: PAGE })
-      .then(setLines)
-      .catch(() => setLines(null));
+      .then((l) => { if (live) setLines(l); })
+      .catch(() => { if (live) setLines(null); });
+    return () => { live = false; };
   }, [asOf, customer, branch, linePage, reload]);
 
   async function exportCustomers() {

@@ -61,6 +61,7 @@ export default function TurnoverSection({ reportTo }: { reportTo?: string }) {
     seenTick.current = tick;
     if (!silent) setLoading(true);
     setError(null);
+    let live = true; // a newer filter selection makes this response stale
     getTurnoverBreakup({
       dateFrom: from,
       dateTo: to,
@@ -72,11 +73,13 @@ export default function TurnoverSection({ reportTo }: { reportTo?: string }) {
       productCategory: category || undefined
     })
       .then((d) => {
+        if (!live) return;
         setData(d);
         markUpdated();
       })
-      .catch((err) => setError(err?.response?.data?.message || err.message || 'Unable to load turnover.'))
-      .finally(() => setLoading(false));
+      .catch((err) => { if (live) setError(err?.response?.data?.message || err.message || 'Unable to load turnover.'); })
+      .finally(() => { if (live) setLoading(false); });
+    return () => { live = false; };
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [from, to, includeTax, group, locations, clientBasis, branch, category, unitSel, reload, tick]);
 

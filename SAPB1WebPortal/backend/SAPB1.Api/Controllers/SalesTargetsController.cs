@@ -43,6 +43,12 @@ public class SalesTargetsController : ControllerBase
     public async Task<ActionResult<ApiResponse<SalesTargetListDto>>> List([FromQuery] SalesTargetQuery query, CancellationToken ct) =>
         Ok(ApiResponse<SalesTargetListDto>.Ok(await _targets.ListAsync(query, ct)));
 
+    /// <summary>Monthly / quarterly / annual actual vs approved target for one company, unit or salesperson.</summary>
+    [HttpGet("performance")]
+    [RequirePermission("Sales", "targets", "View")]
+    public async Task<ActionResult<ApiResponse<TargetPerformanceDto>>> Performance([FromQuery] TargetPerformanceQuery query, CancellationToken ct) =>
+        Ok(ApiResponse<TargetPerformanceDto>.Ok(await _targets.GetPerformanceAsync(query, ct)));
+
     [HttpGet("{id:int}")]
     [RequirePermission("Sales", "targets", "View")]
     public async Task<ActionResult<ApiResponse<SalesTargetDetailDto>>> Get(int id, [FromQuery] bool includeTax, CancellationToken ct)

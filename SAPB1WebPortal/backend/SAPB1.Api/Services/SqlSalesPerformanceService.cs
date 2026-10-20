@@ -12,7 +12,7 @@ namespace SAPB1.Api.Services;
 /// are counted and reported as excluded. Units come from company configuration (SalesDashboard:Units:&lt;company&gt;); a unit's SAP
 /// Location (sales) and Branch (outstanding) are separate dimensions, mapped by name and never assumed equal.
 /// </summary>
-public class SqlSalesPerformanceService : ISalesPerformanceService
+public partial class SqlSalesPerformanceService : ISalesPerformanceService
 {
     private readonly ICompanyConnectionFactory _sap;
     private readonly IPortalConnectionFactory _portal;
@@ -35,6 +35,9 @@ public class SqlSalesPerformanceService : ISalesPerformanceService
 
     private class LocRow { public int Code { get; set; } public string Name { get; set; } = ""; }
     private class BplRow { public int Id { get; set; } public string Name { get; set; } = ""; }
+    private record TargetPick(decimal Amt, int N, string Level);
+    private class TargetRow { public string Scope { get; set; } = "Salesperson"; public int SapSlpCode { get; set; } public int UnitCode { get; set; } public decimal Amt { get; set; } public DateTime S { get; set; } public DateTime E { get; set; } }
+    private static string formatInrPlain(decimal v) => "₹" + Math.Round(v, 0).ToString("N0", new System.Globalization.CultureInfo("en-IN"));
     private class AmtRow { public int? LocCode { get; set; } public decimal Amt { get; set; } public int N { get; set; } }
 
     public async Task<SalesPerformanceDto> GetAsync(PerformanceQuery q, CancellationToken ct = default)
@@ -88,18 +91,7 @@ public class SqlSalesPerformanceService : ISalesPerformanceService
         p.Add("Cat", category);
 
         // ---- actual turnover by location (same rows and rules as the Sales Register / Total Turnover)
-        var rowsSql = q.NetOfCreditNotes
-            ? SalesAmount.NetOfCreditNotesRows(q.IncludeTax)
-            : $@"SELECT h.BPLId, c.GroupCode, l.LocCode, h.SlpCode, h.DocDate, l.ItemCode, l.Quantity AS Qty, {SalesAmount.AllocatedToLine(q.IncludeTax)} AS Amt
-                 FROM OINV h JOIN INV1 l ON l.DocEntry = h.DocEntry LEFT JOIN OCRD c ON c.CardCode = h.CardCode
-                 WHERE h.CANCELED = 'N' AND h.DocDate >= @From AND h.DocDate <= @To";
-        var actualByLoc = (await db.QueryAsync<AmtRow>(new CommandDefinition($@"
-            WITH alloc AS ({rowsSql})
-            SELECT a.LocCode, SUM(a.Amt) AS Amt, 0 AS N
-            FROM alloc a LEFT JOIN OITM it ON it.ItemCode = a.ItemCode
-            WHERE (@Group IS NULL OR a.GroupCode = @Group) AND (@Slp IS NULL OR a.SlpCode = @Slp)
-              AND (@Cat IS NULL OR {ProductCategories.Expr("it")} = @Cat)
-            GROUP BY a.LocCode", p, cancellationToken: ct))).ToList();
+        var actualByLoc = await ActualByLocAsync(db, from, to, q.IncludeTax, q.NetOfCreditNotes, q.CustomerGroup, q.Salesperson, category, ct);
         decimal ActualOf(int? loc) => actualByLoc.Where(r => r.LocCode == loc).Sum(r => r.Amt);
 
         // ---- open sales orders by location (client line definition: open lines, full LineTotal, order date in the period)
@@ -114,31 +106,56 @@ public class SqlSalesPerformanceService : ISalesPerformanceService
             GROUP BY l.LocCode", p, cancellationToken: ct))).ToList();
 
         // ---- approved targets (portal DB). Missing tables or any failure must not break the dashboard.
-        var targetByUnit = new Dictionary<int, decimal>();
-        var targetCounts = new Dictionary<int, int>();
+        // Targets are maintained excluding tax, so with Include Tax on the comparison uses the ex-tax actual (shown in the basis text).
+        var cmpByLoc = q.IncludeTax ? await ActualByLocAsync(db, from, to, false, q.NetOfCreditNotes, q.CustomerGroup, q.Salesperson, category, ct) : actualByLoc;
+        decimal CmpOf(int? loc) => cmpByLoc.Where(r => r.LocCode == loc).Sum(r => r.Amt);
+        decimal AllActual(List<AmtRow> rows) => rows.Where(r => r.LocCode is null || !excludedCodes.Contains(r.LocCode.Value)).Sum(r => r.Amt);
+
+        var trows = new List<TargetRow>();
         var partial = 0;
         var targetsAvailable = true;
         try
         {
             using var pdb = _portal.CreateConnection();
-            var trows = await pdb.QueryAsync<(int UnitCode, decimal Amt, int N)>(new CommandDefinition(@"
-                SELECT UnitCode, SUM(TargetAmount) AS Amt, COUNT(*) AS N FROM dbo.SalespersonTargets
-                WHERE CompanyCode = @Company AND Status = 'Approved' AND PeriodStartDate >= @From AND PeriodEndDate <= @To
-                  AND (@Slp IS NULL OR SapSlpCode = @Slp)
-                GROUP BY UnitCode", new { Company = _company.CompanyCode, From = from, To = to, Slp = q.Salesperson }, cancellationToken: ct));
-            foreach (var r in trows) { targetByUnit[r.UnitCode] = r.Amt; targetCounts[r.UnitCode] = r.N; }
+            var scopeCol = await pdb.ExecuteScalarAsync<int>(new CommandDefinition("SELECT CASE WHEN COL_LENGTH('dbo.SalespersonTargets', 'Scope') IS NULL THEN 0 ELSE 1 END", cancellationToken: ct)) == 1;
+            var scopeSel = scopeCol ? "Scope" : "'Salesperson' AS Scope";
+            trows = (await pdb.QueryAsync<TargetRow>(new CommandDefinition($@"
+                SELECT {scopeSel}, SapSlpCode, UnitCode, TargetAmount AS Amt, PeriodStartDate AS S, PeriodEndDate AS E FROM dbo.SalespersonTargets
+                WHERE CompanyCode = @Company AND Status = 'Approved' AND PeriodStartDate >= @From AND PeriodEndDate <= @To",
+                new { Company = _company.CompanyCode, From = from, To = to }, cancellationToken: ct))).ToList();
             partial = await pdb.ExecuteScalarAsync<int>(new CommandDefinition(@"
                 SELECT COUNT(*) FROM dbo.SalespersonTargets
                 WHERE CompanyCode = @Company AND Status = 'Approved' AND PeriodEndDate >= @From AND PeriodStartDate <= @To
-                  AND NOT (PeriodStartDate >= @From AND PeriodEndDate <= @To) AND (@Slp IS NULL OR SapSlpCode = @Slp)",
-                new { Company = _company.CompanyCode, From = from, To = to, Slp = q.Salesperson }, cancellationToken: ct));
+                  AND NOT (PeriodStartDate >= @From AND PeriodEndDate <= @To)",
+                new { Company = _company.CompanyCode, From = from, To = to }, cancellationToken: ct));
         }
         catch (SqlException)
         {
             targetsAvailable = false;
         }
-        // Targets are set per salesperson / unit / period; they cannot be split by customer group or product category.
+        // The same owner may have a monthly and an annual target for overlapping dates (older data): keep only the coarsest so nothing is counted twice.
+        trows = trows.Where(r => !trows.Any(o => !ReferenceEquals(o, r) && o.Scope == r.Scope && o.SapSlpCode == r.SapSlpCode && o.UnitCode == r.UnitCode
+                                                 && o.S <= r.S && o.E >= r.E && (o.S < r.S || o.E > r.E))).ToList();
+
+        // One level per question, never added together: salesperson selected -> that person's targets; a unit -> the unit's own target (else the sum of
+        // its salespersons' targets); all units -> the company target (else the unit targets, else all salesperson targets).
+        TargetPick? PickOf(IEnumerable<TargetRow> rows, string level)
+        {
+            var l = rows.ToList();
+            return l.Count == 0 ? null : new TargetPick(l.Sum(r => r.Amt), l.Count, level);
+        }
+        TargetPick? TargetForUnit(int unit, int? slp) =>
+            slp is int sp ? PickOf(trows.Where(r => r.Scope == "Salesperson" && r.SapSlpCode == sp && r.UnitCode == unit), "Salesperson targets")
+                          : PickOf(trows.Where(r => r.Scope == "Unit" && r.UnitCode == unit), "Unit target")
+                            ?? PickOf(trows.Where(r => r.Scope == "Salesperson" && r.UnitCode == unit), "Salesperson targets");
+        TargetPick? TargetForAll(int? slp) =>
+            slp is int sp ? PickOf(trows.Where(r => r.Scope == "Salesperson" && r.SapSlpCode == sp), "Salesperson targets")
+                          : PickOf(trows.Where(r => r.Scope == "Company"), "Company target")
+                            ?? PickOf(trows.Where(r => r.Scope == "Unit"), "Unit targets")
+                            ?? PickOf(trows.Where(r => r.Scope == "Salesperson"), "Salesperson targets");
+        // Targets are set per company / unit / salesperson / period; they cannot be split by customer group or product category.
         var targetApplies = targetsAvailable && q.CustomerGroup is null && category is null;
+        string? targetLevel = null;
 
         // ---- journal-based outstanding by branch (as of the To Date)
         var outstandingByBranch = new Dictionary<int, decimal>();
@@ -171,12 +188,13 @@ public class SqlSalesPerformanceService : ISalesPerformanceService
             var o = openByLoc.Where(r => r.LocCode == u.LocationCode).ToList();
             u.OpenOrderLines = o.Sum(r => r.N);
             u.OpenOrderValue = o.Sum(r => r.Amt);
-            if (targetApplies && u.LocationCode is int lc && targetByUnit.TryGetValue(lc, out var t) && t > 0)
+            if (targetApplies && u.LocationCode is int lc && TargetForUnit(lc, q.Salesperson) is { } ut0 && ut0.Amt > 0)
             {
+                var cu = CmpOf(lc);
                 u.TargetConfigured = true;
-                u.Target = t;
-                u.AchievementPct = Math.Round(u.Actual / t * 100, 2);
-                u.Variance = u.Actual - t;
+                u.Target = ut0.Amt;
+                u.AchievementPct = Math.Round(cu / ut0.Amt * 100, 2);
+                u.Variance = cu - ut0.Amt;
             }
             if (outstandingAvailable && u.BranchCode is int bc2) u.Outstanding = outstandingByBranch.GetValueOrDefault(bc2);
         }
@@ -186,7 +204,8 @@ public class SqlSalesPerformanceService : ISalesPerformanceService
         if (q.Unit is int unitCode)
         {
             dto.Actual = ActualOf(unitCode);
-            if (targetApplies && targetByUnit.TryGetValue(unitCode, out var ut) && ut > 0) { dto.Target = ut; dto.TargetCount = targetCounts.GetValueOrDefault(unitCode); }
+            dto.ComparisonActual = CmpOf(unitCode);
+            if (targetApplies && TargetForUnit(unitCode, q.Salesperson) is { } ut && ut.Amt > 0) { dto.Target = ut.Amt; dto.TargetCount = ut.N; targetLevel = ut.Level; }
             var oo = openByLoc.Where(r => r.LocCode == unitCode).ToList();
             dto.OpenOrders = new OpenOrderTotalsDto { OpenLines = oo.Sum(r => r.N), LineTotal = oo.Sum(r => r.Amt) };
             var sel = units.FirstOrDefault(u => u.LocationCode == unitCode);
@@ -196,8 +215,9 @@ public class SqlSalesPerformanceService : ISalesPerformanceService
         else
         {
             // All units = every location except the company's default-excluded ones (same as Total Turnover), plus lines with no location.
-            dto.Actual = actualByLoc.Where(r => r.LocCode is null || !excludedCodes.Contains(r.LocCode.Value)).Sum(r => r.Amt);
-            if (targetApplies && targetByUnit.Count > 0) { dto.Target = targetByUnit.Values.Sum(); dto.TargetCount = targetCounts.Values.Sum(); }
+            dto.Actual = AllActual(actualByLoc);
+            dto.ComparisonActual = AllActual(cmpByLoc);
+            if (targetApplies && TargetForAll(q.Salesperson) is { } ta && ta.Amt > 0) { dto.Target = ta.Amt; dto.TargetCount = ta.N; targetLevel = ta.Level; }
             dto.OpenOrders = new OpenOrderTotalsDto { OpenLines = openByLoc.Sum(r => r.N), LineTotal = openByLoc.Sum(r => r.Amt) };
             dto.TotalOutstanding = outstandingTotal;
             dto.OutstandingAvailable = outstandingAvailable;
@@ -209,21 +229,24 @@ public class SqlSalesPerformanceService : ISalesPerformanceService
         if (dto.TargetConfigured)
         {
             var t = dto.Target!.Value;
-            dto.AchievementPct = Math.Round(dto.Actual / t * 100, 2);
-            dto.Remaining = t - dto.Actual;
-            dto.Variance = dto.Actual - t;
-            dto.Status = dto.Actual >= t ? "Achieved" : "In progress";
+            dto.AchievementPct = Math.Round(dto.ComparisonActual / t * 100, 2);
+            dto.Remaining = t - dto.ComparisonActual;
+            dto.Variance = dto.ComparisonActual - t;
+            dto.Status = dto.ComparisonActual >= t ? "Achieved" : "In progress";
         }
         else dto.Status = "No target configured";
 
+        dto.TargetLevel = targetLevel;
+        var taxNote = q.IncludeTax ? " Targets are set excluding tax, so achievement is measured on the ex-tax actual (" + formatInrPlain(dto.ComparisonActual) + ") even though Include Tax is on." : "";
         dto.TargetBasis = !targetsAvailable
             ? "Targets are unavailable (the targets database could not be read)."
             : q.CustomerGroup is not null || category is not null
-                ? "Targets are set per salesperson, unit and period, so no target applies to a customer-group or product-category selection."
-                : $"Approved salesperson targets whose whole period falls between {from:dd MMM yyyy} and {to:dd MMM yyyy}"
-                  + (q.Unit is null ? " (company-wide and unit targets together)" : " for this unit (company-wide targets are not split by unit)")
-                  + (q.Salesperson is not null ? ", for the selected salesperson" : "")
-                  + (partial > 0 ? $". {partial} approved target(s) only partly overlap these dates and are excluded." : ".");
+                ? "Targets are set per company, unit, salesperson and period, so no target applies to a customer-group or product-category selection."
+                : (targetLevel is null ? "No approved target whose whole period falls between " : (targetLevel + ": approved target(s) whose whole period falls between "))
+                  + $"{from:dd MMM yyyy} and {to:dd MMM yyyy}"
+                  + (q.Salesperson is not null ? ", for the selected salesperson" : q.Unit is null ? " (company-wide)" : " for this unit")
+                  + (partial > 0 ? $". {partial} approved target(s) only partly overlap these dates and are excluded." : ".")
+                  + taxNote;
         return dto;
     }
 }

@@ -15,6 +15,8 @@ public class SaveSalesTargetLineRequest
 /// TargetAmount is ignored (the header total is the sum of the line amounts).</summary>
 public class SaveSalesTargetRequest
 {
+    /// <summary>Company | Unit | Salesperson (default Salesperson). Company/Unit targets carry no salesperson and no item rows.</summary>
+    public string? Scope { get; set; }
     public int SapSlpCode { get; set; }
     /// <summary>OLCT.Code of the unit, or -1 for all units.</summary>
     public int UnitCode { get; set; } = -1;
@@ -36,6 +38,8 @@ public class ReviewSalesTargetRequest
 
 public class SalesTargetQuery
 {
+    /// <summary>Company | Unit | Salesperson. Default Salesperson, so the existing Salesperson Targets page is unchanged.</summary>
+    public string? Scope { get; set; }
     public string? FinancialYear { get; set; }
     public string? PeriodType { get; set; }
     public int? Unit { get; set; }
@@ -76,6 +80,7 @@ public class SalesTargetLineDto
 public class SalesTargetDto
 {
     public int Id { get; set; }
+    public string Scope { get; set; } = "Salesperson";
     public int SapSlpCode { get; set; }
     public string SalespersonName { get; set; } = string.Empty;
     public int UnitCode { get; set; }
@@ -187,4 +192,39 @@ public record SalesTargetResult(bool Ok, int StatusCode, string? Message, int? I
 {
     public static SalesTargetResult Success(int? id = null) => new(true, 200, null, id);
     public static SalesTargetResult Fail(int status, string message) => new(false, status, message);
+}
+
+public class TargetPerformanceQuery
+{
+    public string? Scope { get; set; }
+    public string? FinancialYear { get; set; }
+    public int? Unit { get; set; }
+    public int? Salesperson { get; set; }
+    public bool IncludeTax { get; set; }
+}
+
+/// <summary>One calendar month, quarter or the whole financial year: actual turnover vs the APPROVED target of exactly that period.</summary>
+public class PeriodPerformanceDto
+{
+    public string Label { get; set; } = string.Empty;
+    public DateTime Start { get; set; }
+    public DateTime End { get; set; }
+    public decimal Actual { get; set; }
+    /// <summary>null = no approved target of this period type (never zero-filled).</summary>
+    public decimal? Target { get; set; }
+    public decimal? AchievementPct { get; set; }
+    public decimal? Remaining { get; set; }
+    public decimal? Variance { get; set; }
+}
+
+public class TargetPerformanceDto
+{
+    public string Scope { get; set; } = "Salesperson";
+    public string FinancialYear { get; set; } = string.Empty;
+    public string EntityLabel { get; set; } = string.Empty;
+    public bool IncludeTax { get; set; }
+    public List<PeriodPerformanceDto> Months { get; set; } = new();
+    public List<PeriodPerformanceDto> Quarters { get; set; } = new();
+    public PeriodPerformanceDto Year { get; set; } = new();
+    public string Note { get; set; } = string.Empty;
 }

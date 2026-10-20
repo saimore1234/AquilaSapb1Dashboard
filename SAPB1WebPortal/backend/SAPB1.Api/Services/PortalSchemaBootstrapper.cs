@@ -131,6 +131,17 @@ IF NOT EXISTS (SELECT 1 FROM sys.indexes WHERE name = 'IX_SalespersonTargetAudit
 CREATE INDEX IX_SalespersonTargetAudit_Target ON dbo.SalespersonTargetAudit (TargetId, PerformedAt);
 ";
 
+    // Same statements as db/007_AddTargetScope.sql. Additive only: existing rows become Scope = 'Salesperson'.
+    private const string ScopeSql = @"
+SET QUOTED_IDENTIFIER ON;
+SET ANSI_NULLS ON;
+IF OBJECT_ID('dbo.SalespersonTargets', 'U') IS NOT NULL AND COL_LENGTH('dbo.SalespersonTargets', 'Scope') IS NULL
+    ALTER TABLE dbo.SalespersonTargets ADD Scope NVARCHAR(12) NOT NULL CONSTRAINT DF_SalespersonTargets_Scope DEFAULT ('Salesperson');
+IF OBJECT_ID('dbo.SalespersonTargets', 'U') IS NOT NULL AND COL_LENGTH('dbo.SalespersonTargets', 'Scope') IS NOT NULL
+   AND NOT EXISTS (SELECT 1 FROM sys.check_constraints WHERE name = 'CK_SalespersonTargets_Scope')
+    EXEC('ALTER TABLE dbo.SalespersonTargets ADD CONSTRAINT CK_SalespersonTargets_Scope CHECK (Scope IN (''Company'',''Unit'',''Salesperson'') AND ((Scope = ''Salesperson'' AND SapSlpCode > 0) OR (Scope <> ''Salesperson'' AND SapSlpCode = 0)))');
+";
+
     public async Task StartAsync(CancellationToken cancellationToken)
     {
         try
@@ -139,6 +150,7 @@ CREATE INDEX IX_SalespersonTargetAudit_Target ON dbo.SalespersonTargetAudit (Tar
             using var db = scope.ServiceProvider.GetRequiredService<IPortalConnectionFactory>().CreateConnection();
             await db.ExecuteAsync(new CommandDefinition(Sql, cancellationToken: cancellationToken));
             await db.ExecuteAsync(new CommandDefinition(TargetsSql, cancellationToken: cancellationToken));
+            await db.ExecuteAsync(new CommandDefinition(ScopeSql, cancellationToken: cancellationToken));
         }
         catch (Exception ex)
         {

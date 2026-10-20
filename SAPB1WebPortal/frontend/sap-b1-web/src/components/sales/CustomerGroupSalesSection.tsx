@@ -45,6 +45,7 @@ export default function CustomerGroupSalesSection({ extra, heading = true }: Pro
     seenTick.current = tick;
     if (!silent) { setLoading(true); setData(null); }
     setError(null);
+    let live = true;
     getCustomerGroupSales({
       dateFrom: applied.from,
       dateTo: applied.to,
@@ -56,9 +57,10 @@ export default function CustomerGroupSalesSection({ extra, heading = true }: Pro
       productCategory: applied.category || undefined,
       ...extra
     })
-      .then((d) => { setData(d); markUpdated(); })
-      .catch((err) => setError(err?.response?.data?.message || err.message || 'Unable to load the customer group report.'))
-      .finally(() => setLoading(false));
+      .then((d) => { if (!live) return; setData(d); markUpdated(); })
+      .catch((err) => { if (live) setError(err?.response?.data?.message || err.message || 'Unable to load the customer group report.'); })
+      .finally(() => { if (live) setLoading(false); });
+    return () => { live = false; };
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [applied, extraKey, reload, tick]);
 

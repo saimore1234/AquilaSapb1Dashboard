@@ -21,4 +21,5 @@ public interface ISalesTargetService
     Task<SalesTargetResult> RejectAsync(int id, string? remarks, string user, CancellationToken ct = default);
     Task<SalesTargetResult> ReviseAsync(int id, string user, CancellationToken ct = default);
     Task<SalesTargetResult> DeleteAsync(int id, string user, CancellationToken ct = default);
+    Task<TargetPerformanceDto> GetPerformanceAsync(TargetPerformanceQuery query, CancellationToken ct = default);
 }

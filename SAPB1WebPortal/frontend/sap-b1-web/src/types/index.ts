@@ -1712,8 +1712,11 @@ export interface SalesAnalyticsOptions {
 export type SalesTargetStatus = 'Draft' | 'Submitted' | 'Approved' | 'Rejected' | 'Superseded';
 export type SalesTargetPeriodType = 'Monthly' | 'Quarterly' | 'Annual' | 'Custom';
 
+export type SalesTargetScope = 'Company' | 'Unit' | 'Salesperson';
+
 export interface SalesTarget {
   id: number;
+  scope: SalesTargetScope;
   sapSlpCode: number;
   salespersonName: string;
   unitCode: number;
@@ -1809,6 +1812,7 @@ export interface SalesTargetOptions {
 }
 
 export interface SalesTargetQuery {
+  scope?: SalesTargetScope;
   financialYear?: string;
   periodType?: string;
   unit?: number;
@@ -1831,6 +1835,7 @@ export interface SaveSalesTargetLineRequest {
 }
 
 export interface SaveSalesTargetRequest {
+  scope?: SalesTargetScope;
   sapSlpCode: number;
   unitCode: number;
   financialYear: string;
@@ -2120,6 +2125,9 @@ export interface SalesPerformance {
   selectedUnit: number | null;
   selectedUnitLabel: string;
   actual: number;
+  /** Actual on the basis targets are set on (ex-tax); achievement, remaining and variance use it. */
+  comparisonActual: number;
+  targetLevel: string | null;
   targetConfigured: boolean;
   target: number | null;
   achievementPct: number | null;
@@ -2222,4 +2230,33 @@ export interface OrderExecutionReport {
   dateFrom: string; dateTo: string;
   summary: { orders: number; invoicedOrders: number; awaitingInvoice: number; averageDays: number | null; medianDays: number | null; longestDays: number | null; shortestDays: number | null; buckets: { label: string; orders: number }[] };
   totalCount: number; rows: OrderExecutionRow[];
+}
+
+export interface SalesActivity {
+  dateFrom: string; dateTo: string; monthFrom: string; yearFrom: string;
+  totalQuotations: number; openQuotations: number;
+  totalSalesOrders: number; openSalesOrders: number; salesOrdersThisMonth: number; salesOrdersThisYear: number; openSalesOrderValue: number;
+  totalDeliveries: number; pendingDeliveries: number;
+  totalArInvoices: number; openArInvoices: number; overdueArInvoices: number; outstandingReceivables: number;
+  monthlySalesValue: number; yearlySalesValue: number;
+  incomingPaymentsThisMonth: number | null; incomingPaymentsNote: string | null;
+}
+
+export interface ActivityQuery {
+  dateFrom?: string; dateTo?: string; unit?: number; includeTax?: boolean; netOfCreditNotes?: boolean;
+  customerGroup?: number; salesperson?: number; productCategory?: string;
+}
+
+export interface PeriodPerformance {
+  label: string; start: string; end: string; actual: number;
+  target: number | null; achievementPct: number | null; remaining: number | null; variance: number | null;
+}
+
+export interface TargetPerformance {
+  scope: SalesTargetScope; financialYear: string; entityLabel: string; includeTax: boolean;
+  months: PeriodPerformance[]; quarters: PeriodPerformance[]; year: PeriodPerformance; note: string;
+}
+
+export interface TargetPerformanceQuery {
+  scope: SalesTargetScope; financialYear?: string; unit?: number; salesperson?: number;
 }

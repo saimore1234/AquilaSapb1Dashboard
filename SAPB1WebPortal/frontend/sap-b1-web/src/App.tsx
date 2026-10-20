@@ -57,6 +57,7 @@ const IncomingPayments = lazy(() => import('./pages/sales/IncomingPayments'));
 const IncomingPaymentDetail = lazy(() => import('./pages/sales/IncomingPaymentDetail'));
 const SalesAnalytics = lazy(() => import('./pages/sales/SalesAnalytics'));
 const SalespersonTargets = lazy(() => import('./pages/sales/SalespersonTargets'));
+const TargetManagement = lazy(() => import('./pages/sales/TargetManagement'));
 
 // Production module — real, API-backed (see backend/SAPB1.Api/Controllers/ProductionController.cs)
 const ProductionDashboard = lazy(() => import('./pages/production/ProductionDashboard'));
@@ -186,6 +187,7 @@ export default function App() {
           <Route path="sales/payments" element={<IncomingPayments />} />
           <Route path="sales/payments/:docEntry" element={<IncomingPaymentDetail />} />
           <Route path="sales/targets" element={<SalespersonTargets />} />
+          <Route path="sales/target-management" element={<TargetManagement />} />
           <Route path="sales/analytics" element={<SalesAnalytics />} />
 
           {/* Production — real SAP B1 data via GET /api/production/* */}

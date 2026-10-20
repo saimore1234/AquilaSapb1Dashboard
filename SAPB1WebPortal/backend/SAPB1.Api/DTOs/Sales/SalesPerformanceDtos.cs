@@ -46,6 +46,10 @@ public class SalesPerformanceDto
     public string SelectedUnitLabel { get; set; } = "All units";
 
     public decimal Actual { get; set; }
+    /// <summary>Actual on the basis the targets are set on (excluding tax). Equals Actual unless Include Tax is on; achievement, remaining and variance use this.</summary>
+    public decimal ComparisonActual { get; set; }
+    /// <summary>Which target level was compared: Company target | Unit target(s) | Salesperson targets.</summary>
+    public string? TargetLevel { get; set; }
     public bool TargetConfigured { get; set; }
     public decimal? Target { get; set; }
     public decimal? AchievementPct { get; set; }

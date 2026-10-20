@@ -118,18 +118,21 @@ export function useSalesOverview() {
   const { tick, markUpdated } = useSalesRefresh();
   const { applied } = useSalesFilters();
   const seenTick = useRef(tick);
+  const requestId = useRef(0); // only the newest request may write
   const seenKey = useRef(`${applied.from}|${applied.to}|${applied.includeTax}`);
 
   function load(force: boolean, silent = false) {
     if (!silent) setLoading(true);
     setError(null);
+    const mine = ++requestId.current;
     fetchOverview(force, { fromDate: applied.from, toDate: applied.to, includeTax: applied.includeTax })
       .then((d) => {
+        if (mine !== requestId.current) return;
         setData(d);
         markUpdated();
       })
-      .catch((err) => setError(err?.response?.data?.message || err.message || 'Unable to load the sales overview.'))
-      .finally(() => setLoading(false));
+      .catch((err) => { if (mine === requestId.current) setError(err?.response?.data?.message || err.message || 'Unable to load the sales overview.'); })
+      .finally(() => { if (mine === requestId.current) setLoading(false); });
   }
   // A refresh tick always bypasses the 30-second shared cache and updates in place.
   useEffect(() => {

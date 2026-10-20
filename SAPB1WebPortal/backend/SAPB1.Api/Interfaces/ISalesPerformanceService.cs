@@ -6,4 +6,5 @@ namespace SAPB1.Api.Interfaces;
 public interface ISalesPerformanceService
 {
     Task<SalesPerformanceDto> GetAsync(PerformanceQuery query, CancellationToken ct = default);
+    Task<SalesActivityDto> GetActivityAsync(ActivityQuery query, CancellationToken ct = default);
 }

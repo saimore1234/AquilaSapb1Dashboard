@@ -49,6 +49,10 @@ import type {
   SalesAnalysisReport,
   PerformanceQuery,
   SalesPerformance,
+  SalesActivity,
+  ActivityQuery,
+  TargetPerformance,
+  TargetPerformanceQuery,
   CustomerGroupSales,
   UnpaidInvoiceReport,
   LostCustomerQuery,
@@ -193,8 +197,14 @@ export const getPendingDeliveries = (params: DetailReportQuery) =>
 export const getSalesAnalysis = (params: DetailReportQuery) =>
   unwrap<SalesAnalysisReport>(apiClient.get('/sales/reports/sales-analysis', { params }), 'Failed to load the sales analysis.');
 
-export const getSalesPerformance = (params: PerformanceQuery) =>
-  unwrap<SalesPerformance>(apiClient.get('/sales/dashboard/performance', { params }), 'Failed to load the sales performance.');
+export const getSalesPerformance = (params: PerformanceQuery, signal?: AbortSignal) =>
+  unwrap<SalesPerformance>(apiClient.get('/sales/dashboard/performance', { params, signal }), 'Failed to load the sales performance.');
+
+export const getSalesActivity = (params: ActivityQuery, signal?: AbortSignal) =>
+  unwrap<SalesActivity>(apiClient.get('/sales/dashboard/activity', { params, signal }), 'Failed to load the document activity.');
+
+export const getTargetPerformance = (params: TargetPerformanceQuery) =>
+  unwrap<TargetPerformance>(apiClient.get('/sales/targets/performance', { params }), 'Failed to load target performance.');
 
 export const getCustomerGroupSales = (params: DetailReportQuery) =>
   unwrap<CustomerGroupSales>(apiClient.get('/sales/reports/customer-group-sales', { params, paramsSerializer: { indexes: null } }), 'Failed to load the customer group sales.');
