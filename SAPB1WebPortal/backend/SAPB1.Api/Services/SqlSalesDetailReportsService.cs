@@ -230,7 +230,10 @@ public class SqlSalesDetailReportsService : ISalesDetailReportsService
         var p = Params(q, out var from, out var to);
         p.Add("Sgn", (q.DocType ?? "").Trim().ToLowerInvariant() switch { "invoice" => 1, "creditmemo" => -1, _ => q.NetOfCreditNotes ? (int?)null : 1 });
         using var db = _connectionFactory.CreateConnection();
-        var cte = RegisterCteSql(await DispatchUdfs.LoadAsync(db, ct)).Replace("{CAT}", ProductCategories.Expr("i"));
+        var udf = await DispatchUdfs.LoadAsync(db, ct);
+        // The LR / transporter / order-date lookups are NOT part of the CTE: SQL Server would evaluate them for every line of the period before sorting
+        // (46 s for a financial year). They are fetched below for the invoices on the returned page only.
+        var cte = RegisterCteSql(DispatchUdfs.None).Replace("{CAT}", ProductCategories.Expr("i"));
 
         var totals = await db.QuerySingleAsync<SalesRegisterTotalsDto>(new CommandDefinition($@"
             {cte}
@@ -242,11 +245,28 @@ public class SqlSalesDetailReportsService : ISalesDetailReportsService
             {cte}
             SELECT x.DocType, x.DocEntry, x.DocNum, x.PostingDate, x.CustomerCode, x.CustomerName, x.CustomerGroup, x.Salesperson,
                    x.ItemCode, x.ItemDescription, x.ProdCat AS ProductCategory, x.Warehouse, x.Unit, x.Quantity, x.Rate,
-                   x.BasicAmount, x.NetSales, x.TaxAmount, x.NetSalesInclTax, x.LrNo, x.LrDate, x.Transporter, x.OrderDate,
-                   CASE WHEN x.Sgn = 1 AND x.OrderDate IS NOT NULL THEN DATEDIFF(DAY, x.OrderDate, x.PostingDate) END AS DaysOrderToInvoice
+                   x.BasicAmount, x.NetSales, x.TaxAmount, x.NetSalesInclTax
             FROM x {RegisterWhere}
             ORDER BY x.PostingDate DESC, x.DocType, x.DocNum DESC, x.LineNum
             OFFSET @Skip ROWS FETCH NEXT @Take ROWS ONLY", p, cancellationToken: ct))).ToList();
+
+        var invoiceEntries = rows.Where(r => r.DocType == "A/R Invoice").Select(r => r.DocEntry).Distinct().ToArray();
+        if (invoiceEntries.Length > 0)
+        {
+            var details = (await db.QueryAsync<(int DocEntry, string? LrNo, DateTime? LrDate, string? Transporter, DateTime? OrderDate)>(new CommandDefinition($@"
+                SELECT h.DocEntry, {udf.LrNoExpr("h")} AS LrNo, {udf.LrDateExpr("h")} AS LrDate, {udf.TransporterExpr("h")} AS Transporter,
+                       (SELECT MIN(o.DocDate) FROM INV1 il JOIN ORDR o ON o.DocEntry = CASE
+                            WHEN il.BaseType = 17 THEN il.BaseEntry
+                            WHEN il.BaseType = 15 THEN (SELECT TOP 1 d.BaseEntry FROM DLN1 d WHERE d.DocEntry = il.BaseEntry AND d.LineNum = il.BaseLine AND d.BaseType = 17) END
+                        WHERE il.DocEntry = h.DocEntry) AS OrderDate
+                FROM OINV h WHERE h.DocEntry IN @Entries", new { Entries = invoiceEntries }, cancellationToken: ct))).ToDictionary(d => d.DocEntry);
+            foreach (var r in rows.Where(r => r.DocType == "A/R Invoice"))
+            {
+                if (!details.TryGetValue(r.DocEntry, out var d)) continue;
+                r.LrNo = d.LrNo; r.LrDate = d.LrDate; r.Transporter = d.Transporter; r.OrderDate = d.OrderDate;
+                r.DaysOrderToInvoice = d.OrderDate is DateTime od ? (int)(r.PostingDate.Date - od.Date).TotalDays : null;
+            }
+        }
 
         return new SalesRegisterReportDto { DateFrom = from, DateTo = to, Totals = totals, TotalCount = totals.Lines, Rows = rows };
     }
