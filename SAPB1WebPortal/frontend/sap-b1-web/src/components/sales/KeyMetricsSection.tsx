@@ -29,9 +29,15 @@ export default function KeyMetricsSection({ reportTo }: { reportTo?: string }) {
     setOpenSo(null); setOpenSoErr(false); setLedger(null); setLedgerErr(false);
     let live = true;
     getOpenSalesOrderLines({ dateFrom: applied.from, dateTo: applied.to, page: 1, pageSize: 1 }).then((r) => { if (live) setOpenSo(r.totals); }).catch(() => { if (live) setOpenSoErr(true); });
-    getOutstandingLedger({ asOf: applied.to, page: 1, pageSize: 1 }).then((l) => { if (live) setLedger(l); }).catch(() => { if (live) setLedgerErr(true); });
+    getOutstandingLedger({
+      asOf: applied.to,
+      unit: applied.unit ? Number(applied.unit) : undefined,
+      customerGroup: applied.customerGroup ? Number(applied.customerGroup) : undefined,
+      salesperson: applied.salesperson ? Number(applied.salesperson) : undefined,
+      page: 1, pageSize: 1
+    }).then((l) => { if (live) setLedger(l); }).catch(() => { if (live) setLedgerErr(true); });
     return () => { live = false; };
-  }, [applied.from, applied.to]);
+  }, [applied.from, applied.to, applied.unit, applied.customerGroup, applied.salesperson]);
 
   if (error) return <div className="panel p-4"><ErrorState message={error} onRetry={reload} /></div>;
   return (
@@ -80,12 +86,12 @@ export default function KeyMetricsSection({ reportTo }: { reportTo?: string }) {
           <StatCard
             variant="compact"
             label="Total Outstanding"
-            value={ledgerErr ? '–' : ledger ? formatInr(ledger.totalOutstanding) : '…'}
+            value={ledgerErr ? '–' : ledger ? (ledger.available ? formatInr(ledger.totalOutstanding) : 'Not available') : '…'}
             hint={
               ledgerErr
                 ? 'Unable to load — open the report to retry'
                 : ledger
-                  ? `Journal-based ageing · unpaid invoices today: ${formatInr(ledger.unpaidInvoicesToday)}`
+                  ? (ledger.available ? (ledger.note ?? `Journal-based ageing · unpaid invoices today: ${formatInr(ledger.unpaidInvoicesToday)}`) : (ledger.note ?? 'Not available for this unit'))
                   : 'Loading…'
             }
             icon={Wallet}

@@ -79,9 +79,9 @@ export default function OutstandingLedgerSection() {
     const all = await getOutstandingLedger({ asOf, customer: customer || undefined, branch: branch ? Number(branch) : undefined, page: 1, pageSize: 5000 });
     downloadCsv(
       `total-outstanding-as-of-${asOf}.csv`,
-      ['Customer Code', 'Customer', 'Sales Person', 'Balance', '0-30', '31-60', '61-90', '91-120', '121-150', '151-180', '181-210', '211+'],
-      [...all.customers.map((c) => [c.customerCode, c.customerName, c.salesPerson, c.balance, c.days0To30, c.days31To60, c.days61To90, c.days91To120, c.days121To150, c.days151To180, c.days181To210, c.days211Plus]),
-        ['TOTAL', `${all.customerCount} customers`, '', all.totalOutstanding, ...all.ageing.map((b) => b.amount)]],
+      ['Customer Code', 'Customer', 'Sales Person', 'Overdue Days (oldest open item)', 'Balance', '0-30', '31-60', '61-90', '91-120', '121-150', '151-180', '181-210', '211+'],
+      [...all.customers.map((c) => [c.customerCode, c.customerName, c.salesPerson, c.overdueDays, c.balance, c.days0To30, c.days31To60, c.days61To90, c.days91To120, c.days121To150, c.days151To180, c.days181To210, c.days211Plus]),
+        ['TOTAL', `${all.customerCount} customers`, '', '', all.totalOutstanding, ...all.ageing.map((b) => b.amount)]],
       [['Report: Total Outstanding (journal-based ageing)'], [`As of: ${dmy(asOf)} (selected To Date)`], [`Filters: ${[customer && `customer=${customer}`, branch && `branch=${branch}`].filter(Boolean).join('; ') || 'none'}`], []]
     );
   }
@@ -183,20 +183,22 @@ export default function OutstandingLedgerSection() {
                   <tr className="text-left text-xs uppercase tracking-wide text-ink-tertiary border-b border-border">
                     <th className="px-3 py-2.5 font-medium">Customer</th>
                     <th className="px-3 py-2.5 font-medium">Sales person</th>
+                    <th className={th} title="Days from the due date to the As-on date, for the customer's oldest owed item">Overdue days</th>
                     <th className={th}>Balance</th><th className={th}>0–30</th><th className={th}>31–60</th><th className={th}>61–90</th>
                     <th className={th}>91–120</th><th className={th}>121–150</th><th className={th}>151–180</th><th className={th}>181–210</th><th className={th}>211+</th>
                   </tr>
                 </thead>
                 <tbody>
                   {loading || !data ? (
-                    Array.from({ length: 6 }).map((_, i) => <tr key={i} className="border-b border-border last:border-0"><td colSpan={11} className="px-3 py-3"><Skeleton className="h-4 w-full" /></td></tr>)
+                    Array.from({ length: 6 }).map((_, i) => <tr key={i} className="border-b border-border last:border-0"><td colSpan={12} className="px-3 py-3"><Skeleton className="h-4 w-full" /></td></tr>)
                   ) : data.customers.length === 0 ? (
-                    <tr><td colSpan={11}><EmptyState message="No outstanding balances for the selection." /></td></tr>
+                    <tr><td colSpan={12}><EmptyState message="No outstanding balances for the selection." /></td></tr>
                   ) : data.customers.map((c) => (
                     <tr key={c.customerCode} className={`border-b border-border last:border-0 hover:bg-surface-tertiary/60 cursor-pointer ${customer === c.customerCode ? 'bg-surface-tertiary/60' : ''}`}
                       onClick={() => setParam('customer', customer === c.customerCode ? '' : c.customerCode)}>
                       <td className="px-3 py-2"><div className="text-ink-primary">{c.customerName ?? c.customerCode}</div><div className="text-xs text-ink-tertiary">{c.customerCode}</div></td>
                       <td className="px-3 py-2">{c.salesPerson ?? '—'}</td>
+                      <td className="px-3 py-2 text-right tabular-nums">{c.overdueDays === null || c.overdueDays === undefined ? '—' : c.overdueDays}</td>
                       <td className="px-3 py-2 text-right tabular-nums font-medium">{rupees.format(c.balance)}</td>
                       {[c.days0To30, c.days31To60, c.days61To90, c.days91To120, c.days121To150, c.days151To180, c.days181To210, c.days211Plus].map((v, i) => (
                         <td key={i} className="px-3 py-2 text-right tabular-nums">{v ? rupees.format(v) : ''}</td>
@@ -207,7 +209,7 @@ export default function OutstandingLedgerSection() {
                 {data && data.customers.length > 0 && (
                   <tfoot>
                     <tr className="font-semibold bg-surface-tertiary/60 border-t border-border-strong">
-                      <td className="px-3 py-2.5" colSpan={2}>Total · {rupees.format(data.customerCount)} customers (all pages)</td>
+                      <td className="px-3 py-2.5" colSpan={3}>Total · {rupees.format(data.customerCount)} customers (all pages)</td>
                       <td className="px-3 py-2.5 text-right tabular-nums">{rupees.format(data.totalOutstanding)}</td>
                       {data.ageing.map((b) => <td key={b.label} className="px-3 py-2.5 text-right tabular-nums">{rupees.format(b.amount)}</td>)}
                     </tr>
@@ -232,14 +234,14 @@ export default function OutstandingLedgerSection() {
                       <th className="px-3 py-2.5 font-medium">Trans #</th><th className="px-3 py-2.5 font-medium">Document</th><th className="px-3 py-2.5 font-medium">Reference</th>
                       <th className="px-3 py-2.5 font-medium">Customer</th><th className="px-3 py-2.5 font-medium">Branch</th>
                       <th className="px-3 py-2.5 font-medium">Posting</th><th className="px-3 py-2.5 font-medium">Due</th>
-                      <th className={th}>Days</th><th className={th}>Balance</th>
+                      <th className={th}>Days</th><th className={th} title="Days from the due date to the As-on date (negative = not yet due)">Overdue days</th><th className={th}>Balance</th>
                     </tr>
                   </thead>
                   <tbody>
                     {!lines ? (
-                      <tr><td colSpan={9} className="px-3 py-3"><Skeleton className="h-4 w-full" /></td></tr>
+                      <tr><td colSpan={10} className="px-3 py-3"><Skeleton className="h-4 w-full" /></td></tr>
                     ) : lines.rows.length === 0 ? (
-                      <tr><td colSpan={9}><EmptyState message="No open journal lines for this selection." /></td></tr>
+                      <tr><td colSpan={10}><EmptyState message="No open journal lines for this selection." /></td></tr>
                     ) : lines.rows.map((r, i) => (
                       <tr key={`${r.transId}-${i}`} className="border-b border-border last:border-0">
                         <td className="px-3 py-2 tabular-nums">{r.transId}</td>
@@ -250,12 +252,13 @@ export default function OutstandingLedgerSection() {
                         <td className="px-3 py-2 whitespace-nowrap">{formatDate(r.postingDate)}</td>
                         <td className="px-3 py-2 whitespace-nowrap">{r.dueDate ? formatDate(r.dueDate) : '—'}</td>
                         <td className="px-3 py-2 text-right tabular-nums">{r.daysOutstanding}</td>
+                        <td className="px-3 py-2 text-right tabular-nums">{r.overdueDays === null || r.overdueDays === undefined ? '—' : r.overdueDays}</td>
                         <td className="px-3 py-2 text-right tabular-nums">{rupees.format(r.balance)}</td>
                       </tr>
                     ))}
                   </tbody>
                   {lines && lines.rows.length > 0 && (
-                    <tfoot><tr className="font-semibold bg-surface-tertiary/60 border-t border-border-strong"><td className="px-3 py-2.5" colSpan={8}>Total ({rupees.format(lines.totalCount)} lines, all pages)</td><td className="px-3 py-2.5 text-right tabular-nums">{rupees.format(lines.total)}</td></tr></tfoot>
+                    <tfoot><tr className="font-semibold bg-surface-tertiary/60 border-t border-border-strong"><td className="px-3 py-2.5" colSpan={9}>Total ({rupees.format(lines.totalCount)} lines, all pages)</td><td className="px-3 py-2.5 text-right tabular-nums">{rupees.format(lines.total)}</td></tr></tfoot>
                   )}
                 </table>
               </div>

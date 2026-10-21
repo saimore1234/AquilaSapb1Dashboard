@@ -701,6 +701,11 @@ export interface DeliveryDetail extends SalesDocumentDetailBase {
 }
 
 export interface ArInvoice {
+  lrNo: string | null;
+  lrDate: string | null;
+  transporter: string | null;
+  orderDate: string | null;
+  daysOrderToInvoice: number | null;
   docEntry: number;
   docNum: number;
   customerCode: string;
@@ -784,7 +789,7 @@ export interface SalesDashboard {
   totalArInvoices: number;
   openArInvoices: number;
   overdueArInvoices: number;
-  outstandingReceivables: number;
+  outstandingReceivables: number | null;
   monthlySalesValue: number;
   yearlySalesValue: number;
   openSalesOrderValue: number;
@@ -1892,6 +1897,10 @@ export interface OpenOrderTotals {
 }
 
 export interface OpenSalesOrderLine {
+  /** ETA from production, exactly as entered on the order line (free text). */
+  etaProduction: string | null;
+  /** Days from the order date to today. */
+  daysOpen: number;
   docEntry: number;
   docNum: number;
   postingDate: string;
@@ -1948,6 +1957,12 @@ export interface OpenPurchaseOrderReport {
 }
 
 export interface SalesRegisterRow {
+  lrNo: string | null;
+  lrDate: string | null;
+  transporter: string | null;
+  orderDate: string | null;
+  /** Days from the order date to the invoice date; null without a linked sales order. */
+  daysOrderToInvoice: number | null;
   docType: string;
   docEntry: number;
   docNum: number;
@@ -1981,12 +1996,21 @@ export interface LedgerOutstandingQuery {
   asOf?: string;
   customer?: string;
   branch?: number;
+  /** Dashboard unit; the server maps it to its SAP branch. */
+  unit?: number;
+  customerGroup?: number;
+  /** The customer's assigned salesperson. */
+  salesperson?: number;
   page?: number;
   pageSize?: number;
 }
 
 export interface OutstandingLedger {
   asOf: string;
+  /** false when the selected unit has no SAP branch mapping; note says why. */
+  available: boolean;
+  note: string | null;
+  unitLabel: string | null;
   totalOutstanding: number;
   customerCount: number;
   byBranch: { branchCode: number | null; branch: string; amount: number }[];
@@ -2005,6 +2029,8 @@ export interface OutstandingLedger {
     days151To180: number;
     days181To210: number;
     days211Plus: number;
+    /** Days from the due date to the As-on date for the customer's oldest owed item. */
+    overdueDays: number | null;
   }[];
   unpaidInvoicesToday: number;
   noBillToBalance: number;
@@ -2012,6 +2038,8 @@ export interface OutstandingLedger {
 }
 
 export interface OutstandingLine {
+  /** Days from the due date to the As-on date (negative = not yet due). */
+  overdueDays: number | null;
   transId: number;
   customerCode: string;
   customerName: string | null;
@@ -2240,6 +2268,7 @@ export interface SalesActivity {
   totalArInvoices: number; openArInvoices: number; overdueArInvoices: number; outstandingReceivables: number;
   monthlySalesValue: number; yearlySalesValue: number;
   incomingPaymentsThisMonth: number | null; incomingPaymentsNote: string | null;
+  outstandingReceivablesNote: string | null;
 }
 
 export interface ActivityQuery {

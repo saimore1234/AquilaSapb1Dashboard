@@ -35,7 +35,9 @@ public class SalesActivityDto
     public int TotalArInvoices { get; set; }
     public int OpenArInvoices { get; set; }
     public int OverdueArInvoices { get; set; }
-    public decimal OutstandingReceivables { get; set; }
+    /// <summary>Unpaid A/R invoice balance TODAY (current position), by invoice branch. null = not available (see OutstandingReceivablesNote).</summary>
+    public decimal? OutstandingReceivables { get; set; }
+    public string? OutstandingReceivablesNote { get; set; }
     public decimal MonthlySalesValue { get; set; }
     public decimal YearlySalesValue { get; set; }
     /// <summary>null when payments cannot be split by the selected dimension (see IncomingPaymentsNote).</summary>

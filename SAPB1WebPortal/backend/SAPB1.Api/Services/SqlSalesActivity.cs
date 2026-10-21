@@ -44,7 +44,29 @@ public partial class SqlSalesPerformanceService
               (SELECT COUNT(*) FROM OINV h WHERE h.CANCELED = 'N' AND {InPeriod} {iv}) AS TotalArInvoices,
               (SELECT COUNT(*) FROM OINV h WHERE h.CANCELED = 'N' AND h.DocStatus = 'O' {iv}) AS OpenArInvoices,
               (SELECT COUNT(*) FROM OINV h WHERE h.CANCELED = 'N' AND h.DocStatus = 'O' AND h.DocDueDate < @Today {iv}) AS OverdueArInvoices,
-              (SELECT ISNULL(SUM(h.DocTotal - h.PaidToDate), 0) FROM OINV h WHERE h.CANCELED = 'N' AND h.DocStatus = 'O' {iv}) AS OutstandingReceivables", p, cancellationToken: ct));
+              CAST(0 AS decimal(19,2)) AS OutstandingReceivables", p, cancellationToken: ct));
+
+        // Unpaid invoice balance TODAY (current position, never filtered by document date): invoice header, so no join can multiply it. DocTotal and
+        // PaidToDate are in local currency (INR) even for foreign-currency invoices. Unit = the invoice's BRANCH via the verified unit->branch mapping;
+        // a unit without a mapped branch, or a product-category selection (a balance has no categories), is "not available" rather than a wrong number.
+        int? recvBranch = null;
+        if (cat is not null) counts.OutstandingReceivablesNote = "An unpaid balance is not split by product category.";
+        else if (q.Unit is int ru)
+        {
+            var map = await UnitBranchMap.ResolveAsync(db, _config, _company.CompanyCode, ru, ct);
+            if (map.BranchId is null) counts.OutstandingReceivablesNote = map.Note;
+            else { recvBranch = map.BranchId; counts.OutstandingReceivablesNote = $"Branch {map.BranchName} (mapped to {map.Label})"; }
+        }
+        if (cat is null && (q.Unit is null || recvBranch is not null))
+        {
+            var rp = new DynamicParameters(p);
+            rp.Add("Branch", recvBranch);
+            counts.OutstandingReceivables = await db.ExecuteScalarAsync<decimal>(new CommandDefinition(@"
+                SELECT ISNULL(SUM(h.DocTotal - h.PaidToDate), 0) FROM OINV h
+                WHERE h.CANCELED = 'N' AND h.DocStatus = 'O' AND (@Branch IS NULL OR h.BPLId = @Branch) AND (@Slp IS NULL OR h.SlpCode = @Slp)
+                  AND (@Group IS NULL OR EXISTS (SELECT 1 FROM OCRD c WHERE c.CardCode = h.CardCode AND c.GroupCode = @Group))", rp, cancellationToken: ct));
+        }
+        else counts.OutstandingReceivables = null;
 
         counts.DateFrom = from; counts.DateTo = to; counts.MonthFrom = monthFrom; counts.YearFrom = yearFrom;
 

@@ -123,8 +123,10 @@ public class SqlSalesDetailReportsService : ISalesDetailReportsService
                    ISNULL(SUM(l.Quantity), 0) AS OrderedQuantity, ISNULL(SUM(l.OpenCreQty), 0) AS OpenQuantity, ISNULL(SUM(l.LineTotal), 0) AS LineTotal
             {OpenSoFrom}", p, cancellationToken: ct));
 
+        var udf = await DispatchUdfs.LoadAsync(db, ct);
         var rows = (await db.QueryAsync<OpenSalesOrderLineDto>(new CommandDefinition($@"
-            SELECT h.DocEntry, h.DocNum, h.DocDate AS PostingDate, l.ShipDate AS DueDate, h.CardCode AS CustomerCode, h.CardName AS CustomerName,
+            SELECT h.DocEntry, h.DocNum, h.DocDate AS PostingDate, l.ShipDate AS DueDate, {udf.EtaExpr("l")} AS EtaProduction,
+                   DATEDIFF(DAY, h.DocDate, CAST(GETDATE() AS date)) AS DaysOpen, h.CardCode AS CustomerCode, h.CardName AS CustomerName,
                    l.ItemCode, l.Dscription AS ItemDescription, {ProductCategories.Expr("i")} AS ProductCategory,
                    l.WhsCode AS WarehouseCode, w.WhsName AS Warehouse, u.Location AS Unit, s.SlpName AS Salesperson,
                    l.Quantity AS OrderedQuantity, l.OpenCreQty AS OpenQuantity, l.Price AS UnitPrice, l.LineTotal,
@@ -173,17 +175,23 @@ public class SqlSalesDetailReportsService : ISalesDetailReportsService
     // A/R invoice lines positive, A/R credit-memo lines with the sign reversed; cancelled documents excluded; unit = line
     // location; salesperson = document header. NetSales is the reconciled "client basis" amount (line total less the
     // document's header discount spread over its lines, excl. tax) so the footer reconciles with Total Turnover.
-    private const string RegisterCte = @"
+    private static string RegisterCteSql(DispatchUdfs u) => RegisterCteTemplate
+        .Replace("{LR}", u.LrNoExpr("h")).Replace("{LRDT}", u.LrDateExpr("h")).Replace("{TRN}", u.TransporterExpr("h"))
+        .Replace("{ORD}", DispatchUdfs.OrderDateOfInvoiceLine("l"));
+
+    private const string RegisterCteTemplate = @"
         WITH reg AS (
             SELECT 1 AS Sgn, 'A/R Invoice' AS DocType, h.DocEntry, h.DocNum, h.DocDate, h.CardCode, h.CardName, h.SlpCode, h.BPLId, h.DiscSum,
                    l.LineNum, l.ItemCode, l.Dscription, l.WhsCode, l.LocCode, l.Quantity, l.Price, l.LineTotal, l.GTotal, l.VatSum AS LineTax,
-                   SUM(l.LineTotal) OVER (PARTITION BY l.DocEntry) AS LineSum
+                   SUM(l.LineTotal) OVER (PARTITION BY l.DocEntry) AS LineSum,
+                   {LR} AS LrNo, {LRDT} AS LrDate, {TRN} AS Transporter, {ORD} AS OrderDate
             FROM OINV h JOIN INV1 l ON l.DocEntry = h.DocEntry
             WHERE h.CANCELED = 'N' AND h.DocDate >= @From AND h.DocDate < DATEADD(DAY, 1, @To)
             UNION ALL
             SELECT -1, 'A/R Credit Memo', h.DocEntry, h.DocNum, h.DocDate, h.CardCode, h.CardName, h.SlpCode, h.BPLId, h.DiscSum,
                    l.LineNum, l.ItemCode, l.Dscription, l.WhsCode, l.LocCode, l.Quantity, l.Price, l.LineTotal, l.GTotal, l.VatSum,
-                   SUM(l.LineTotal) OVER (PARTITION BY l.DocEntry)
+                   SUM(l.LineTotal) OVER (PARTITION BY l.DocEntry),
+                   CAST(NULL AS nvarchar(100)), CAST(NULL AS datetime), CAST(NULL AS nvarchar(100)), CAST(NULL AS datetime)
             FROM ORIN h JOIN RIN1 l ON l.DocEntry = h.DocEntry
             WHERE h.CANCELED = 'N' AND h.DocDate >= @From AND h.DocDate < DATEADD(DAY, 1, @To)
         ), x AS (
@@ -194,7 +202,8 @@ public class SqlSalesDetailReportsService : ISalesDetailReportsService
                    r.Sgn * r.Quantity AS Quantity, r.Price AS Rate, r.Sgn * r.LineTotal AS BasicAmount,
                    r.Sgn * r.LineTotal * (CASE WHEN r.LineSum <> 0 THEN 1 - r.DiscSum / r.LineSum ELSE 1 END) AS NetSales,
                    r.Sgn * r.LineTax AS TaxAmount,
-                   r.Sgn * r.GTotal * (CASE WHEN r.LineSum <> 0 THEN 1 - r.DiscSum / r.LineSum ELSE 1 END) AS NetSalesInclTax
+                   r.Sgn * r.GTotal * (CASE WHEN r.LineSum <> 0 THEN 1 - r.DiscSum / r.LineSum ELSE 1 END) AS NetSalesInclTax,
+                   r.LrNo, r.LrDate, r.Transporter, r.OrderDate
             FROM reg r
             LEFT JOIN OCRD c ON c.CardCode = r.CardCode
             LEFT JOIN OCRG g ON g.GroupCode = c.GroupCode
@@ -220,8 +229,8 @@ public class SqlSalesDetailReportsService : ISalesDetailReportsService
     {
         var p = Params(q, out var from, out var to);
         p.Add("Sgn", (q.DocType ?? "").Trim().ToLowerInvariant() switch { "invoice" => 1, "creditmemo" => -1, _ => q.NetOfCreditNotes ? (int?)null : 1 });
-        var cte = RegisterCte.Replace("{CAT}", ProductCategories.Expr("i"));
         using var db = _connectionFactory.CreateConnection();
+        var cte = RegisterCteSql(await DispatchUdfs.LoadAsync(db, ct)).Replace("{CAT}", ProductCategories.Expr("i"));
 
         var totals = await db.QuerySingleAsync<SalesRegisterTotalsDto>(new CommandDefinition($@"
             {cte}
@@ -233,7 +242,8 @@ public class SqlSalesDetailReportsService : ISalesDetailReportsService
             {cte}
             SELECT x.DocType, x.DocEntry, x.DocNum, x.PostingDate, x.CustomerCode, x.CustomerName, x.CustomerGroup, x.Salesperson,
                    x.ItemCode, x.ItemDescription, x.ProdCat AS ProductCategory, x.Warehouse, x.Unit, x.Quantity, x.Rate,
-                   x.BasicAmount, x.NetSales, x.TaxAmount, x.NetSalesInclTax
+                   x.BasicAmount, x.NetSales, x.TaxAmount, x.NetSalesInclTax, x.LrNo, x.LrDate, x.Transporter, x.OrderDate,
+                   CASE WHEN x.Sgn = 1 AND x.OrderDate IS NOT NULL THEN DATEDIFF(DAY, x.OrderDate, x.PostingDate) END AS DaysOrderToInvoice
             FROM x {RegisterWhere}
             ORDER BY x.PostingDate DESC, x.DocType, x.DocNum DESC, x.LineNum
             OFFSET @Skip ROWS FETCH NEXT @Take ROWS ONLY", p, cancellationToken: ct))).ToList();
@@ -249,7 +259,7 @@ public class SqlSalesDetailReportsService : ISalesDetailReportsService
     {
         var p = Params(q, out var from, out var to);
         p.Add("Sgn", q.NetOfCreditNotes ? (int?)null : 1);
-        var cte = RegisterCte.Replace("{CAT}", ProductCategories.Expr("i"));
+        var cte = RegisterCteSql(DispatchUdfs.None).Replace("{CAT}", ProductCategories.Expr("i"));
         var value = q.IncludeTax ? "x.NetSalesInclTax" : "x.NetSales";
         using var db = _connectionFactory.CreateConnection();
 
@@ -711,6 +721,7 @@ public class SqlSalesDetailReportsService : ISalesDetailReportsService
             INNER JOIN OCRD c ON c.CardCode = oi.ShortName
             LEFT JOIN CRD1 b ON b.CardCode = c.CardCode AND b.AdresType = 'B' AND c.BillToDef = b.Address
             WHERE (@Branch IS NULL OR oi.BPLId = @Branch)
+              AND (@Group IS NULL OR c.GroupCode = @Group) AND (@Slp IS NULL OR c.SlpCode = @Slp)
         )";
 
     private static string DocTypeLabel(int transType) => transType switch
@@ -727,6 +738,8 @@ public class SqlSalesDetailReportsService : ISalesDetailReportsService
         p.Add("Ref", asOf);
         p.Add("Customer", Clean(q.Customer));
         p.Add("Branch", q.Branch);
+        p.Add("Group", q.CustomerGroup);
+        p.Add("Slp", q.Salesperson);
         p.Add("Skip", (Math.Max(1, q.Page) - 1) * pageSize);
         p.Add("Take", pageSize);
         return p;
@@ -734,9 +747,26 @@ public class SqlSalesDetailReportsService : ISalesDetailReportsService
 
     public async Task<OutstandingLedgerDto> GetLedgerOutstandingAsync(LedgerOutstandingQuery q, CancellationToken ct = default)
     {
-        var p = OutstandingParams(q, out var asOf);
         using var db = _connectionFactory.CreateConnection();
-        var dto = new OutstandingLedgerDto { AsOf = asOf };
+        var asOfDate = (q.AsOf ?? DateTime.Today).Date;
+        var dto = new OutstandingLedgerDto { AsOf = asOfDate };
+
+        // A unit is a SAP location; balances are by branch, so the unit is mapped to its configured branch (never assumed equal).
+        if (q.Unit is int unit && q.Branch is null)
+        {
+            var map = await UnitBranchMap.ResolveAsync(db, _config, _company.CompanyCode, unit, ct);
+            dto.UnitLabel = map.Label;
+            if (map.BranchId is null)
+            {
+                dto.Available = false;
+                dto.Note = map.Note;
+                dto.Ageing = new List<OutstandingBucketDto>();
+                return dto;
+            }
+            q.Branch = map.BranchId;
+            dto.Note = $"Branch {map.BranchName} (mapped to {map.Label})";
+        }
+        var p = OutstandingParams(q, out var asOf);
 
         dto.UnpaidInvoicesToday = await db.ExecuteScalarAsync<decimal>(new CommandDefinition(
             "SELECT ISNULL(SUM(DocTotal - PaidToDate), 0) FROM OINV WHERE DocStatus = 'O' AND CANCELED = 'N'", cancellationToken: ct));
@@ -755,7 +785,8 @@ public class SqlSalesDetailReportsService : ISalesDetailReportsService
                    SUM(CASE WHEN x.Days BETWEEN 121 AND 150 THEN x.Balance ELSE 0 END) AS Days121To150,
                    SUM(CASE WHEN x.Days BETWEEN 151 AND 180 THEN x.Balance ELSE 0 END) AS Days151To180,
                    SUM(CASE WHEN x.Days BETWEEN 181 AND 210 THEN x.Balance ELSE 0 END) AS Days181To210,
-                   SUM(CASE WHEN x.Days > 210 THEN x.Balance ELSE 0 END) AS Days211Plus
+                   SUM(CASE WHEN x.Days > 210 THEN x.Balance ELSE 0 END) AS Days211Plus,
+                   MAX(CASE WHEN x.Balance > 0 AND x.DueDate IS NOT NULL THEN DATEDIFF(DAY, x.DueDate, @Ref) END) AS OverdueDays
             FROM #x x LEFT JOIN OSLP s ON s.SlpCode = x.SlpCode
             GROUP BY x.CardCode
             HAVING SUM(x.Balance) <> 0;
@@ -800,7 +831,7 @@ public class SqlSalesDetailReportsService : ISalesDetailReportsService
         var all = (await db.QueryAsync<OutstandingLineDto>(new CommandDefinition($@"
             {OutstandingCte}
             SELECT x.TransId, x.CardCode AS CustomerCode, MAX(x.CardName) AS CustomerName, MAX(b.BPLName) AS Branch, x.PostingDate, x.DueDate,
-                   MAX(x.TransType) AS TransType, MAX(x.BaseRef) AS BaseRef, MAX(x.Ref1) AS Ref1, MAX(x.Days) AS DaysOutstanding, SUM(x.Balance) AS Balance
+                   MAX(x.TransType) AS TransType, MAX(x.BaseRef) AS BaseRef, MAX(x.Ref1) AS Ref1, MAX(x.Days) AS DaysOutstanding, DATEDIFF(DAY, x.DueDate, @Ref) AS OverdueDays, SUM(x.Balance) AS Balance
             FROM x LEFT JOIN OBPL b ON b.BPLId = x.BPLId
             GROUP BY x.TransId, x.CardCode, x.PostingDate, x.DueDate, x.BPLId
             HAVING SUM(x.Balance) <> 0

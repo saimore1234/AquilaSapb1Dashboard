@@ -26,6 +26,10 @@ const columns: ColumnDef<ArInvoice>[] = [
   },
   { key: 'postingDate', header: 'Posting Date', render: (r) => formatDate(r.postingDate), className: 'hidden md:table-cell text-ink-secondary' },
   { key: 'dueDate', header: 'Due Date', render: (r) => formatDate(r.dueDate), className: 'hidden lg:table-cell text-ink-secondary' },
+  { key: 'lrNo', header: 'LR No.', render: (r) => r.lrNo || '—', className: 'hidden xl:table-cell text-ink-secondary' },
+  { key: 'lrDate', header: 'LR Date', render: (r) => formatDate(r.lrDate), className: 'hidden xl:table-cell text-ink-secondary' },
+  { key: 'transporter', header: 'Transporter', render: (r) => r.transporter || '—', className: 'hidden xl:table-cell text-ink-secondary' },
+  { key: 'orderDays', header: 'No. of Days', align: 'right', render: (r) => (r.daysOrderToInvoice === null ? '—' : <span className="tabular-nums" title={r.orderDate ? `Order date ${formatDate(r.orderDate)} → invoice date` : undefined}>{r.daysOrderToInvoice}</span>), className: 'hidden xl:table-cell text-ink-secondary' },
   { key: 'salesEmployee', header: 'Sales Employee', render: (r) => r.salesEmployee || '—', className: 'hidden lg:table-cell text-ink-secondary' },
   { key: 'status', header: 'Status', render: (r) => <span className={r.status === 'Open' ? 'badge-success' : 'badge-neutral'}>{r.status}</span> },
   {

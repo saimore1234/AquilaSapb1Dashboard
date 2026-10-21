@@ -395,10 +395,16 @@ public class SqlSalesService : ISalesService
         var countSql = $"SELECT COUNT(*) FROM OINV c LEFT JOIN OCRD cust ON cust.CardCode = c.CardCode {whereSql}";
         var total = await db.ExecuteScalarAsync<int>(new CommandDefinition(countSql, p, cancellationToken: ct));
 
+        var udf = await DispatchUdfs.LoadAsync(db, ct);
         var listSql = $@"
             SELECT c.DocEntry, c.DocNum, c.CardCode AS CustomerCode, cust.CardName AS CustomerName,
                    c.DocDate AS PostingDate, c.DocDueDate AS DueDate, s.SlpName AS SalesEmployee,
-                   c.DocStatus AS Status, c.DocTotal AS Total, c.PaidToDate AS Paid, c.DocCur AS Currency
+                   c.DocStatus AS Status, c.DocTotal AS Total, c.PaidToDate AS Paid, c.DocCur AS Currency,
+                   {udf.LrNoExpr("c")} AS LrNo, {udf.LrDateExpr("c")} AS LrDate, {udf.TransporterExpr("c")} AS Transporter,
+                   (SELECT MIN(o.DocDate) FROM INV1 il JOIN ORDR o ON o.DocEntry = CASE
+                        WHEN il.BaseType = 17 THEN il.BaseEntry
+                        WHEN il.BaseType = 15 THEN (SELECT TOP 1 d.BaseEntry FROM DLN1 d WHERE d.DocEntry = il.BaseEntry AND d.LineNum = il.BaseLine AND d.BaseType = 17) END
+                    WHERE il.DocEntry = c.DocEntry) AS OrderDate
             FROM OINV c
             LEFT JOIN OCRD cust ON cust.CardCode = c.CardCode
             LEFT JOIN OSLP s ON s.SlpCode = c.SlpCode
@@ -411,7 +417,9 @@ public class SqlSalesService : ISalesService
         {
             DocEntry = r.DocEntry, DocNum = r.DocNum, CustomerCode = r.CustomerCode, CustomerName = r.CustomerName,
             PostingDate = r.PostingDate, DueDate = r.DueDate, SalesEmployee = r.SalesEmployee,
-            Status = MapStatus(r.Status), Total = r.Total, Paid = r.Paid, Balance = r.Total - r.Paid, Currency = r.Currency
+            Status = MapStatus(r.Status), Total = r.Total, Paid = r.Paid, Balance = r.Total - r.Paid, Currency = r.Currency,
+            LrNo = r.LrNo, LrDate = r.LrDate, Transporter = r.Transporter, OrderDate = r.OrderDate,
+            DaysOrderToInvoice = r.OrderDate == null ? (int?)null : (int)((DateTime)r.PostingDate).Date.Subtract(((DateTime)r.OrderDate).Date).TotalDays
         }).ToList();
 
         return new PagedResult<ArInvoiceDto> { Items = items, Page = query.Page, PageSize = query.PageSize, TotalCount = total };

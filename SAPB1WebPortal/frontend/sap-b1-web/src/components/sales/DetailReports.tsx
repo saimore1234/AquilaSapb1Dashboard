@@ -24,7 +24,9 @@ const soCols: Col<OpenSalesOrderLine>[] = [
   { key: 'bq', header: 'Open Qty', align: 'right', render: (r) => qty.format(r.openQuantity), csv: (r) => r.openQuantity },
   { key: 'pr', header: 'Unit Price', align: 'right', render: (r) => rupees.format(r.unitPrice), csv: (r) => r.unitPrice },
   { key: 'lt', header: 'Line Total', align: 'right', render: (r) => rupees.format(r.lineTotal), csv: (r) => r.lineTotal },
-  { key: 'st', header: 'Status', render: (r) => (r.documentStatus === 'O' ? 'Open' : 'Closed'), csv: (r) => (r.documentStatus === 'O' ? 'Open' : 'Closed') }
+  { key: 'st', header: 'Status', render: (r) => (r.documentStatus === 'O' ? 'Open' : 'Closed'), csv: (r) => (r.documentStatus === 'O' ? 'Open' : 'Closed') },
+  { key: 'eta', header: 'ETA (Production)', render: (r) => dash(r.etaProduction), csv: (r) => r.etaProduction, nowrap: true },
+  { key: 'days', header: 'No. of Days', align: 'right', render: (r) => r.daysOpen, csv: (r) => r.daysOpen }
 ];
 
 export function OpenSalesOrderLinesSection() {
@@ -32,7 +34,7 @@ export function OpenSalesOrderLinesSection() {
     <DetailReport<OpenSalesOrderLine, OpenSalesOrderReport>
       id="osl"
       title="Open Sales Orders — line level"
-      definition="Counts individual open order lines (line status Open, order not cancelled), not whole orders. Line total is the full value of each open line; open quantity is the undelivered balance. Orders are filtered by the order date in the selected period; tick 'All open orders' to include older open orders too (use this to compare with a report that lists every open order)."
+      definition="ETA (Production) is the free-text ETA entered on the order line; No. of Days is the days from the order date to today. Counts individual open order lines (line status Open, order not cancelled), not whole orders. Line total is the full value of each open line; open quantity is the undelivered balance. Orders are filtered by the order date in the selected period; tick 'All open orders' to include older open orders too (use this to compare with a report that lists every open order)."
       fetcher={getOpenSalesOrderLines}
       columns={soCols}
       filters={['unit', 'warehouse', 'branch', 'salesperson', 'customerGroup', 'customer', 'category', 'item', 'allDates']}
@@ -46,9 +48,11 @@ export function OpenSalesOrderLinesSection() {
           <td className={foot} />
           <td className={`${foot} text-right tabular-nums`}>{rupees.format(rep.totals.lineTotal)}</td>
           <td className={foot} />
+          <td className={foot} />
+          <td className={foot} />
         </tr>
       )}
-      footerCsv={(rep) => ['TOTAL', `Open lines ${rep.totals.openLines}`, `Distinct orders ${rep.totals.distinctOrders}`, '', '', '', '', '', rep.totals.orderedQuantity, rep.totals.openQuantity, '', rep.totals.lineTotal, '']}
+      footerCsv={(rep) => ['TOTAL', `Open lines ${rep.totals.openLines}`, `Distinct orders ${rep.totals.distinctOrders}`, '', '', '', '', '', rep.totals.orderedQuantity, rep.totals.openQuantity, '', rep.totals.lineTotal, '', '', '']}
     />
   );
 }
@@ -111,7 +115,12 @@ const regCols: Col<SalesRegisterRow>[] = [
   { key: 'basic', header: 'Basic Amount', align: 'right', render: (r) => rupees.format(r.basicAmount), csv: (r) => r.basicAmount },
   { key: 'net', header: 'Net Sales (excl. tax)', align: 'right', render: (r) => rupees.format(r.netSales), csv: (r) => r.netSales },
   { key: 'tax', header: 'Tax', align: 'right', render: (r) => rupees.format(r.taxAmount), csv: (r) => r.taxAmount },
-  { key: 'netinc', header: 'Net Sales (incl. tax)', align: 'right', render: (r) => rupees.format(r.netSalesInclTax), csv: (r) => r.netSalesInclTax }
+  { key: 'netinc', header: 'Net Sales (incl. tax)', align: 'right', render: (r) => rupees.format(r.netSalesInclTax), csv: (r) => r.netSalesInclTax },
+  { key: 'lr', header: 'LR No.', render: (r) => dash(r.lrNo), csv: (r) => r.lrNo, nowrap: true },
+  { key: 'lrd', header: 'LR Date', render: (r) => (r.lrDate ? formatDate(r.lrDate) : '—'), csv: (r) => r.lrDate?.slice(0, 10), nowrap: true },
+  { key: 'trn', header: 'Transporter', render: (r) => dash(r.transporter), csv: (r) => r.transporter },
+  { key: 'od', header: 'Order Date', render: (r) => (r.orderDate ? formatDate(r.orderDate) : '—'), csv: (r) => r.orderDate?.slice(0, 10), nowrap: true },
+  { key: 'dd', header: 'No. of Days', align: 'right', render: (r) => (r.daysOrderToInvoice === null ? '—' : r.daysOrderToInvoice), csv: (r) => r.daysOrderToInvoice }
 ];
 
 export function SalesRegisterSection() {
@@ -119,7 +128,7 @@ export function SalesRegisterSection() {
     <DetailReport<SalesRegisterRow, SalesRegisterReport>
       id="reg"
       title="Sales Register — invoice lines minus credit-memo lines"
-      definition="A/R invoice lines as positive sales and A/R credit-memo lines with the sign reversed; cancelled documents excluded. Unit is the line's location; salesperson is the document's. Net Sales spreads each document's header discount over its lines (no freight or rounding) and reconciles with Total Turnover on the Sales Overview."
+      definition="LR No., LR Date and Transporter come from the invoice; No. of Days is the days from the sales order date to the invoice date (blank when the invoice has no linked sales order). A/R invoice lines as positive sales and A/R credit-memo lines with the sign reversed; cancelled documents excluded. Unit is the line's location; salesperson is the document's. Net Sales spreads each document's header discount over its lines (no freight or rounding) and reconciles with Total Turnover on the Sales Overview."
       fetcher={getSalesRegister}
       columns={regCols}
       filters={['docType', 'unit', 'warehouse', 'branch', 'salesperson', 'customerGroup', 'customer', 'category', 'item']}
@@ -134,9 +143,10 @@ export function SalesRegisterSection() {
           <td className={`${foot} text-right tabular-nums`}>{rupees.format(rep.totals.netSales)}</td>
           <td className={`${foot} text-right tabular-nums`}>{rupees.format(rep.totals.taxAmount)}</td>
           <td className={`${foot} text-right tabular-nums`}>{rupees.format(rep.totals.netSalesInclTax)}</td>
+          <td className={foot} colSpan={5} />
         </tr>
       )}
-      footerCsv={(rep) => ['TOTAL', `${rep.totals.lines} lines`, '', '', '', '', '', '', '', '', '', rep.totals.quantity, '', rep.totals.basicAmount, rep.totals.netSales, rep.totals.taxAmount, rep.totals.netSalesInclTax]}
+      footerCsv={(rep) => ['TOTAL', `${rep.totals.lines} lines`, '', '', '', '', '', '', '', '', '', rep.totals.quantity, '', rep.totals.basicAmount, rep.totals.netSales, rep.totals.taxAmount, rep.totals.netSalesInclTax, '', '', '', '', '']}
     />
   );
 }

@@ -162,15 +162,15 @@ public partial class SqlSalesPerformanceService : ISalesPerformanceService
         decimal outstandingTotal = 0;
         string? outstandingNote = null;
         var outstandingAvailable = false;
-        if (q.Salesperson is not null || q.CustomerGroup is not null || category is not null)
+        if (category is not null)
         {
-            outstandingNote = "Outstanding is a customer balance and is not split by salesperson, customer group or product category.";
+            outstandingNote = "Outstanding is a customer balance and is not split by product category.";
         }
         else
         {
             try
             {
-                var led = await _detail.GetLedgerOutstandingAsync(new LedgerOutstandingQuery { AsOf = to, Page = 1, PageSize = 1 }, ct);
+                var led = await _detail.GetLedgerOutstandingAsync(new LedgerOutstandingQuery { AsOf = to, CustomerGroup = q.CustomerGroup, Salesperson = q.Salesperson, Page = 1, PageSize = 1 }, ct);
                 foreach (var b in led.ByBranch) if (b.BranchCode is int bc) outstandingByBranch[bc] = b.Amount;
                 outstandingTotal = led.TotalOutstanding;
                 outstandingAvailable = true;

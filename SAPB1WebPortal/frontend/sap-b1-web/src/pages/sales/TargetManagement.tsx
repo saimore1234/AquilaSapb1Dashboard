@@ -31,7 +31,7 @@ import Pagination from '../../components/Pagination';
 import StatCard from '../../components/StatCard';
 import { compactInr, useChartTheme } from '../../components/sales/salesShared';
 import { amountTone, formatInr, formatLongDate, formatPct } from '../../components/sales/formatters';
-import { usePermissions } from '../../permissions/usePermissions';
+import { useAuth } from '../../context/AuthContext';
 
 const PAGE_SIZE = 15;
 const MONTHS = ['Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec', 'Jan', 'Feb', 'Mar'];
@@ -73,7 +73,12 @@ function PeriodRow({ p }: { p: PeriodPerformance }) {
 }
 
 export default function TargetManagement() {
-  const { canCreate, canEdit, canDelete, canApprove } = usePermissions();
+  // The API enforces the Sales > Targets permissions, so this page uses the same ones (no separate role grant needed).
+  const { hasPermission } = useAuth();
+  const canCreate = hasPermission('Sales', 'targets', 'Create');
+  const canEdit = hasPermission('Sales', 'targets', 'Edit');
+  const canDelete = hasPermission('Sales', 'targets', 'Delete');
+  const canApprove = hasPermission('Sales', 'targets', 'Approve');
   const { axisColor, gridColor, cur, prev, tooltipStyle } = useChartTheme();
 
   const [options, setOptions] = useState<SalesTargetOptions | null>(null);

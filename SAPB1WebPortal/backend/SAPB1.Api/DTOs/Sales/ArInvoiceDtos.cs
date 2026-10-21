@@ -14,6 +14,12 @@ public class ArInvoiceDto
     public decimal Paid { get; set; }
     public decimal Balance { get; set; }
     public string? Currency { get; set; }
+    public string? LrNo { get; set; }
+    public DateTime? LrDate { get; set; }
+    public string? Transporter { get; set; }
+    public DateTime? OrderDate { get; set; }
+    /// <summary>Days from the (first linked) sales order date to the invoice date; null when the invoice has no sales order.</summary>
+    public int? DaysOrderToInvoice { get; set; }
 }
 
 public class ArInvoiceDetailDto

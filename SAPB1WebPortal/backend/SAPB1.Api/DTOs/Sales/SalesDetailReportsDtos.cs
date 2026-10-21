@@ -81,6 +81,10 @@ public class OpenSalesOrderLineDto
     public decimal LineTotal { get; set; }
     public string DocumentStatus { get; set; } = string.Empty;
     public string LineStatus { get; set; } = string.Empty;
+    /// <summary>ETA from production exactly as entered on the order line (free text, e.g. "15 Working Days"); null when not entered.</summary>
+    public string? EtaProduction { get; set; }
+    /// <summary>Days from the order date to today (the day the report is run).</summary>
+    public int DaysOpen { get; set; }
 }
 
 public class OpenOrderTotalsDto
@@ -152,6 +156,13 @@ public class SalesRegisterRowDto
     public decimal NetSales { get; set; }                     // the reconciled "client basis" amount, excl. tax
     public decimal TaxAmount { get; set; }
     public decimal NetSalesInclTax { get; set; }
+    // Dispatch details — invoice rows only (credit memos leave these blank)
+    public string? LrNo { get; set; }
+    public DateTime? LrDate { get; set; }
+    public string? Transporter { get; set; }
+    public DateTime? OrderDate { get; set; }
+    /// <summary>Days from the order date to the invoice date; null when the invoice has no linked sales order.</summary>
+    public int? DaysOrderToInvoice { get; set; }
 }
 
 public class SalesRegisterTotalsDto
@@ -180,6 +191,12 @@ public class LedgerOutstandingQuery
     public DateTime? AsOf { get; set; }
     public string? Customer { get; set; }
     public int? Branch { get; set; }
+    /// <summary>Dashboard unit (OLCT.Code). Resolved on the server to its mapped SAP branch; ignored when Branch is given.</summary>
+    public int? Unit { get; set; }
+    /// <summary>Customer master group (OCRD.GroupCode).</summary>
+    public int? CustomerGroup { get; set; }
+    /// <summary>The customer's ASSIGNED salesperson (OCRD.SlpCode) — the same one the client's ageing report shows.</summary>
+    public int? Salesperson { get; set; }
     public int Page { get; set; } = 1;
     public int PageSize { get; set; } = 25;
 }
@@ -211,11 +228,17 @@ public class OutstandingCustomerDto
     public decimal Days151To180 { get; set; }
     public decimal Days181To210 { get; set; }
     public decimal Days211Plus { get; set; }
+    /// <summary>Days from the due date to the As-on date for the customer's OLDEST open (owed) item; null when nothing is owed.</summary>
+    public int? OverdueDays { get; set; }
 }
 
 public class OutstandingLedgerDto
 {
     public DateTime AsOf { get; set; }
+    /// <summary>false when the selected unit has no valid SAP branch mapping: nothing is calculated and Note says why.</summary>
+    public bool Available { get; set; } = true;
+    public string? Note { get; set; }
+    public string? UnitLabel { get; set; }
     public decimal TotalOutstanding { get; set; }
     public int CustomerCount { get; set; }
     public List<OutstandingBranchDto> ByBranch { get; set; } = new();
@@ -242,6 +265,8 @@ public class OutstandingLineDto
     public string? BaseRef { get; set; }
     public string? Ref1 { get; set; }
     public int DaysOutstanding { get; set; }
+    /// <summary>Days from this item's due date to the As-on date (negative = not yet due); null without a due date.</summary>
+    public int? OverdueDays { get; set; }
     public decimal Balance { get; set; }
 }
 
