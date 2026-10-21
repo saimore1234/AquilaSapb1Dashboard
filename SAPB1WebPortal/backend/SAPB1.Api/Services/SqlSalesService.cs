@@ -268,8 +268,19 @@ public class SqlSalesService : ISalesService
         {
             DocEntry = r.DocEntry, DocNum = r.DocNum, CustomerCode = r.CustomerCode, CustomerName = r.CustomerName,
             PostingDate = r.PostingDate, DueDate = r.DueDate, SalesEmployee = r.SalesEmployee,
-            Status = MapStatus(r.Status), Total = r.Total, Currency = r.Currency
+            Status = MapStatus(r.Status), Total = r.Total, Currency = r.Currency,
+            DaysOpen = r.Status == "O" ? (int?)(int)(DateTime.Today - ((DateTime)r.PostingDate).Date).TotalDays : null
         }).ToList();
+
+        // ETA from production sits on the order LINES: fetched for this page's orders only (distinct values per order).
+        var udf = await DispatchUdfs.LoadAsync(db, ct);
+        if (udf.Eta && items.Count > 0)
+        {
+            var etas = (await db.QueryAsync<(int DocEntry, string Eta)>(new CommandDefinition(
+                "SELECT DISTINCT DocEntry, U_ETA FROM RDR1 WHERE DocEntry IN @Ids AND ISNULL(U_ETA, '') <> ''",
+                new { Ids = items.Select(i => i.DocEntry).ToArray() }, cancellationToken: ct))).ToLookup(e => e.DocEntry, e => e.Eta);
+            foreach (var i in items) { var v = etas[i.DocEntry].ToList(); if (v.Count > 0) i.EtaProduction = string.Join("; ", v); }
+        }
 
         return new PagedResult<SalesOrderDto> { Items = items, Page = query.Page, PageSize = query.PageSize, TotalCount = total };
     }

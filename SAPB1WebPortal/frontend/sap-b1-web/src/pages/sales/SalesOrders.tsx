@@ -27,6 +27,8 @@ const columns: ColumnDef<SalesOrder>[] = [
   { key: 'postingDate', header: 'Posting Date', render: (r) => formatDate(r.postingDate), className: 'hidden md:table-cell text-ink-secondary' },
   { key: 'dueDate', header: 'Delivery Date', render: (r) => formatDate(r.dueDate), className: 'hidden lg:table-cell text-ink-secondary' },
   { key: 'salesEmployee', header: 'Sales Employee', render: (r) => r.salesEmployee || '—', className: 'hidden lg:table-cell text-ink-secondary' },
+  { key: 'eta', header: 'ETA (Production)', render: (r) => r.etaProduction || '—', className: 'hidden lg:table-cell text-ink-secondary' },
+  { key: 'daysOpen', header: 'No. of Days', align: 'right', render: (r) => (r.daysOpen === null ? '—' : <span className="tabular-nums" title="Days from the order date to today">{r.daysOpen}</span>), className: 'hidden md:table-cell text-ink-secondary' },
   { key: 'status', header: 'Status', render: (r) => <span className={r.status === 'Open' ? 'badge-success' : 'badge-neutral'}>{r.status}</span> },
   { key: 'total', header: 'Total', align: 'right', render: (r) => <span className="tabular-nums">{r.total.toLocaleString()}</span> },
   { key: 'currency', header: 'Currency', render: (r) => r.currency || '—', className: 'hidden lg:table-cell text-ink-secondary' }

@@ -13,6 +13,10 @@ public class SalesOrderDto
     public string Status { get; set; } = string.Empty;
     public decimal Total { get; set; }
     public string? Currency { get; set; }
+    /// <summary>ETA from production as entered on the order lines (free text); distinct values joined with "; ". null when none entered.</summary>
+    public string? EtaProduction { get; set; }
+    /// <summary>Days from the order date to today. Only for open orders; null for closed ones.</summary>
+    public int? DaysOpen { get; set; }
 }
 
 public class SalesOrderDetailDto

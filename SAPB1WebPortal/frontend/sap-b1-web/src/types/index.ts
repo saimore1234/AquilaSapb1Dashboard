@@ -662,6 +662,10 @@ export interface SalesQuotationDetail extends SalesDocumentDetailBase {
 }
 
 export interface SalesOrder {
+  /** ETA from production as entered on the order lines. */
+  etaProduction: string | null;
+  /** Days from the order date to today (open orders only). */
+  daysOpen: number | null;
   docEntry: number;
   docNum: number;
   customerCode: string;
