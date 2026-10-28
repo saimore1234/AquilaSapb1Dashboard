@@ -11,6 +11,7 @@ import ShellDialogs from './shell/ShellDialogs';
 import { ShellProvider, useShell } from './shell/ShellContext';
 import { useAuth } from '../context/AuthContext';
 import AccessDenied from '../components/AccessDenied';
+import SalesScopeBanner from '../components/SalesScopeBanner';
 import { navItems } from './navigation';
 import { firstAccessibleRoute } from '../permissions/navigation';
 
@@ -99,6 +100,7 @@ function Shell() {
               animate={{ opacity: 1, y: 0 }}
               transition={{ duration: 0.16, ease: 'easeOut' }}
             >
+              {!denied && <SalesScopeBanner />}
               {denied ? <AccessDenied /> : <Outlet />}
             </motion.div>
           </AnimatePresence>

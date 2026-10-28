@@ -9,6 +9,7 @@ import { ErrorState, EmptyState } from '../components/StateViews';
 import { TableSkeleton, Skeleton } from '../components/ui/Skeleton';
 import ResponsiveTable, { type ColumnDef } from '../components/ui/ResponsiveTable';
 import StatCard from '../components/StatCard';
+import AromaToggle, { useShowAroma } from '../components/sales/AromaToggle';
 
 export default function Inventory() {
   const [result, setResult] = useState<PagedResult<InventoryListItem> | null>(null);
@@ -60,7 +61,8 @@ export default function Inventory() {
     );
   }, [result]);
 
-  const columns: ColumnDef<InventoryListItem>[] = [
+  const showAroma = useShowAroma();
+  const allColumns: ColumnDef<InventoryListItem>[] = [
     {
       key: 'item',
       header: 'Item',
@@ -71,6 +73,7 @@ export default function Inventory() {
         </div>
       )
     },
+    { key: 'aroma', header: 'Aroma Code', render: (row) => row.aromaCode || '—', className: 'hidden md:table-cell text-ink-secondary' },
     {
       key: 'warehouse',
       header: 'Warehouse',
@@ -102,6 +105,7 @@ export default function Inventory() {
     },
     { key: 'status', header: 'Status', render: (row) => <StockStatusBadge status={row.stockStatus} /> }
   ];
+  const columns = showAroma ? allColumns : allColumns.filter((c) => c.key !== 'aroma');
 
   return (
     <div className="space-y-4">
@@ -130,7 +134,8 @@ export default function Inventory() {
 
       <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3">
         <div className="flex gap-2 flex-wrap">
-          <SearchBar value={search} onChange={setSearch} placeholder="Item code or name…" />
+          <SearchBar value={search} onChange={setSearch} placeholder="Item code, name or Aroma code…" />
+          <AromaToggle className="self-center" />
           <select className="input-field w-auto" value={status} onChange={(e) => setStatus(e.target.value)}>
             <option value="all">All statuses</option>
             <option value="In Stock">In Stock</option>

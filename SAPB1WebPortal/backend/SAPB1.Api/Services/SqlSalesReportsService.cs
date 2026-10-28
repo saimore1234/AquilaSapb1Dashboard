@@ -16,12 +16,14 @@ public class SqlSalesReportsService : ISalesReportsService
     private readonly ICompanyConnectionFactory _connectionFactory;
     private readonly ICompanyContext _company;
     private readonly IConfiguration _config;
+    private readonly ISalesScope _scope;
 
-    public SqlSalesReportsService(ICompanyConnectionFactory connectionFactory, ICompanyContext company, IConfiguration config)
+    public SqlSalesReportsService(ICompanyConnectionFactory connectionFactory, ICompanyContext company, IConfiguration config, ISalesScope scope)
     {
         _connectionFactory = connectionFactory;
         _company = company;
         _config = config;
+        _scope = scope;
     }
 
     private static DateTime FyStart(DateTime today) => new(today.Month >= 4 ? today.Year : today.Year - 1, 4, 1);
@@ -44,9 +46,10 @@ public class SqlSalesReportsService : ISalesReportsService
         p.Add("Skip", (Math.Max(1, q.Page) - 1) * Math.Clamp(q.PageSize, 1, 5000));
         p.Add("PageSize", Math.Clamp(q.PageSize, 1, 5000));
 
-        // Whether an invoice was raised from a delivery (BaseType 15) — the only
-        // dispatch signal standard SAP holds. LR/transporter/e-Way data is not
-        // in standard tables, so it is deliberately not reported here.
+        // Whether an invoice was raised from a delivery (BaseType 15). LR no. / LR date / transporter are the client's user-defined
+        // invoice fields (see DispatchUdfs) and are added for the returned page below.
+        var aromaHas = await ItemUdf.HasAromaAsync(db, ct);
+        var aromaFirst = ItemUdf.Aroma(aromaHas, "it");
         var cte = $@"
             WITH inv AS (
                 SELECT h.DocEntry, h.DocNum, h.DocDate, h.CardCode, h.CardName, {SalesAmount.Header(q.IncludeTax, "h")} AS Amt, h.DocStatus,
@@ -55,7 +58,8 @@ public class SqlSalesReportsService : ISalesReportsService
                 FROM OINV h
                 WHERE h.CANCELED = 'N' AND h.DocDate >= @From AND h.DocDate <= @To
                   AND (@Search IS NULL OR CAST(h.DocNum AS NVARCHAR(20)) LIKE @SearchLike
-                       OR h.CardCode LIKE @SearchLike OR h.CardName LIKE @SearchLike)
+                       OR h.CardCode LIKE @SearchLike OR h.CardName LIKE @SearchLike
+                       OR EXISTS (SELECT 1 FROM INV1 sl WHERE sl.DocEntry = h.DocEntry AND sl.ItemCode IN (SELECT si.ItemCode FROM OITM si WHERE si.ItemCode LIKE @SearchLike OR si.ItemName LIKE @SearchLike OR {ItemUdf.Aroma(aromaHas, "si")} LIKE @SearchLike)))
             )";
         const string filter = " WHERE (@Delivery IS NULL OR FromDelivery = @Delivery)";
 
@@ -65,6 +69,7 @@ public class SqlSalesReportsService : ISalesReportsService
         var rows = (await db.QueryAsync(new CommandDefinition(cte + @"
             SELECT i.DocEntry, i.DocNum, i.DocDate, i.CardCode, i.CardName, i.Amt, i.DocStatus, i.FromDelivery,
                    (SELECT TOP 1 l.Dscription FROM INV1 l WHERE l.DocEntry = i.DocEntry ORDER BY l.LineNum) AS Item,
+                   (SELECT TOP 1 " + aromaFirst + @" FROM INV1 l LEFT JOIN OITM it ON it.ItemCode = l.ItemCode WHERE l.DocEntry = i.DocEntry ORDER BY l.LineNum) AS AromaCode,
                    (SELECT TOP 1 l.unitMsr FROM INV1 l WHERE l.DocEntry = i.DocEntry ORDER BY l.LineNum) AS Uom,
                    (SELECT COUNT(*) FROM INV1 l WHERE l.DocEntry = i.DocEntry) AS LineCount,
                    (SELECT ISNULL(SUM(l.Quantity), 0) FROM INV1 l WHERE l.DocEntry = i.DocEntry) AS Qty,
@@ -82,12 +87,30 @@ public class SqlSalesReportsService : ISalesReportsService
             {
                 DocEntry = r.DocEntry, DocNum = r.DocNum, DocDate = r.DocDate,
                 CustomerCode = r.CardCode, CustomerName = r.CardName,
-                Item = r.Item, Uom = r.Uom, LineCount = r.LineCount, Quantity = qty,
+                Item = r.Item, AromaCode = r.AromaCode, Uom = r.Uom, LineCount = r.LineCount, Quantity = qty,
                 Rate = qty > 0 ? Math.Round(net / (decimal)qty, 2) : 0,
                 Value = r.Amt,
                 DispatchStatus = r.FromDelivery == 1 ? "Against Delivery" : "Direct Invoice",
                 Status = r.DocStatus == "O" ? "Open" : "Closed"
             });
+        }
+        // LR no., LR date, transporter and the order date come from the invoice / its linked order: looked up for this page's invoices only.
+        if (dto.Rows.Count > 0)
+        {
+            var udf = await DispatchUdfs.LoadAsync(db, ct);
+            var details = (await db.QueryAsync<(int DocEntry, string? LrNo, DateTime? LrDate, string? Transporter, DateTime? OrderDate)>(new CommandDefinition($@"
+                SELECT h.DocEntry, {udf.LrNoExpr("h")} AS LrNo, {udf.LrDateExpr("h")} AS LrDate, {udf.TransporterExpr("h")} AS Transporter,
+                       (SELECT MIN(o.DocDate) FROM INV1 il JOIN ORDR o ON o.DocEntry = CASE
+                            WHEN il.BaseType = 17 THEN il.BaseEntry
+                            WHEN il.BaseType = 15 THEN (SELECT TOP 1 d.BaseEntry FROM DLN1 d WHERE d.DocEntry = il.BaseEntry AND d.LineNum = il.BaseLine AND d.BaseType = 17) END
+                        WHERE il.DocEntry = h.DocEntry) AS OrderDate
+                FROM OINV h WHERE h.DocEntry IN @Entries", new { Entries = dto.Rows.Select(r => r.DocEntry).ToArray() }, cancellationToken: ct))).ToDictionary(d => d.DocEntry);
+            foreach (var r in dto.Rows)
+            {
+                if (!details.TryGetValue(r.DocEntry, out var d)) continue;
+                r.LrNo = d.LrNo; r.LrDate = d.LrDate; r.Transporter = d.Transporter; r.OrderDate = d.OrderDate;
+                r.DaysOrderToInvoice = d.OrderDate is DateTime od ? (int)(r.DocDate.Date - od.Date).TotalDays : null;
+            }
         }
         return dto;
     }
@@ -107,7 +130,8 @@ public class SqlSalesReportsService : ISalesReportsService
                    ISNULL(SUM(CASE WHEN DATEDIFF(DAY, h.DocDate, @Today) BETWEEN 31 AND 60 THEN h.DocTotal - h.PaidToDate END), 0) AS Days31To60,
                    ISNULL(SUM(CASE WHEN DATEDIFF(DAY, h.DocDate, @Today) BETWEEN 61 AND 90 THEN h.DocTotal - h.PaidToDate END), 0) AS Days61To90,
                    ISNULL(SUM(CASE WHEN DATEDIFF(DAY, h.DocDate, @Today) > 90 THEN h.DocTotal - h.PaidToDate END), 0) AS Days90Plus,
-                   SUM(h.DocTotal - h.PaidToDate) AS Total
+                   SUM(h.DocTotal - h.PaidToDate) AS Total,
+                   MAX(DATEDIFF(DAY, h.DocDueDate, @Today)) AS OverdueDays
             FROM OINV h
             LEFT JOIN OCRD c ON c.CardCode = h.CardCode
             LEFT JOIN OSLP s ON s.SlpCode = c.SlpCode
@@ -151,11 +175,11 @@ public class SqlSalesReportsService : ISalesReportsService
     {
         using var db = _connectionFactory.CreateConnection();
         var like = string.IsNullOrWhiteSpace(search) ? null : $"%{search.Trim()}%";
-        const string sql = @"
+        var sql = @"
             SELECT TOP 30 CardCode AS CustomerCode, CardName AS CustomerName
             FROM OCRD
             WHERE CardType = 'C' AND frozenFor = 'N'
-              AND (@Like IS NULL OR CardCode LIKE @Like OR CardName LIKE @Like)
+              AND (@Like IS NULL OR CardCode LIKE @Like OR CardName LIKE @Like)" + SalesScopeSql.CustomerPredicate(_scope.Current) + @"
             ORDER BY CardName";
         return (await db.QueryAsync<CustomerLookupDto>(new CommandDefinition(sql, new { Like = like }, cancellationToken: ct))).ToList();
     }
@@ -180,7 +204,7 @@ public class SqlSalesReportsService : ISalesReportsService
 
         var header = await db.QuerySingleOrDefaultAsync(new CommandDefinition(@"
             SELECT CardCode, CardName, City, LicTradNum, ISNULL(CreditLine, 0) AS CreditLine, ISNULL(Balance, 0) AS Balance
-            FROM OCRD WHERE CardCode = @Customer AND CardType = 'C'", new { Customer = customer }, cancellationToken: ct));
+            FROM OCRD WHERE CardCode = @Customer AND CardType = 'C'" + SalesScopeSql.CustomerPredicate(_scope.Current), new { Customer = customer }, cancellationToken: ct));
         if (header is null) return null;
 
         var opening = await db.ExecuteScalarAsync<decimal>(new CommandDefinition(
@@ -235,7 +259,7 @@ public class SqlSalesReportsService : ISalesReportsService
             FROM OINV h WHERE h.CANCELED = 'N' GROUP BY h.CardCode ORDER BY SUM(h.DocTotal) DESC", cancellationToken: ct))).ToList();
         dto.SalesPersons = (await db.QueryAsync<AnalyticsOptionDto>(new CommandDefinition(@"
             SELECT CAST(SlpCode AS NVARCHAR(20)) AS [Key], SlpName AS Name
-            FROM OSLP WHERE SlpCode > 0 AND Active = 'Y' ORDER BY SlpName", cancellationToken: ct))).ToList();
+            FROM OSLP WHERE SlpCode > 0 AND Active = 'Y'" + SalesScopeSql.CustomerPredicate(_scope.Current) + " ORDER BY SlpName", cancellationToken: ct))).ToList();
         dto.Items = (await db.QueryAsync<AnalyticsOptionDto>(new CommandDefinition(@"
             SELECT TOP 300 l.ItemCode AS [Key], MAX(l.Dscription) AS Name
             FROM INV1 l JOIN OINV h ON h.DocEntry = l.DocEntry

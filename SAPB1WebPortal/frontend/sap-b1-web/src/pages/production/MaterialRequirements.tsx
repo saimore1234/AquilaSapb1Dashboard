@@ -46,7 +46,7 @@ export default function MaterialRequirements() {
       })}
       columns={columns}
       keyField={(r, i) => `${r.productionOrderDocEntry}-${r.componentItemCode}-${i}`}
-      searchPlaceholder="Production order #, finished good, component…"
+      searchPlaceholder="Production order #, finished good, component, Aroma code…"
       filterFields={['date', 'item', 'warehouse']}
       emptyMessage="No material requirements found."
       renderMobileCard={(r) => (

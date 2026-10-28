@@ -18,12 +18,14 @@ public class SqlSalesDetailReportsService : ISalesDetailReportsService
     private readonly ICompanyConnectionFactory _connectionFactory;
     private readonly ICompanyContext _company;
     private readonly IConfiguration _config;
+    private readonly ISalesScope _scope;
 
-    public SqlSalesDetailReportsService(ICompanyConnectionFactory connectionFactory, ICompanyContext company, IConfiguration config)
+    public SqlSalesDetailReportsService(ICompanyConnectionFactory connectionFactory, ICompanyContext company, IConfiguration config, ISalesScope scope)
     {
         _connectionFactory = connectionFactory;
         _company = company;
         _config = config;
+        _scope = scope;
     }
 
     private static DateTime FyStart(DateTime today) => new(today.Month >= 4 ? today.Year : today.Year - 1, 4, 1);
@@ -85,7 +87,7 @@ public class SqlSalesDetailReportsService : ISalesDetailReportsService
         dto.Branches = (await db.QueryAsync<TurnoverOptionDto>(new CommandDefinition("SELECT BPLId AS Code, BPLName AS Name FROM OBPL ORDER BY BPLName", cancellationToken: ct))).ToList();
         dto.CustomerGroups = (await db.QueryAsync<TurnoverOptionDto>(new CommandDefinition("SELECT GroupCode AS Code, GroupName AS Name FROM OCRG WHERE GroupType = 'C' ORDER BY GroupName", cancellationToken: ct))).ToList();
         dto.Salespersons = (await db.QueryAsync<SalespersonOptionDto>(new CommandDefinition(
-            "SELECT SlpCode AS Code, SlpName AS Name, CASE WHEN Active = 'Y' THEN 1 ELSE 0 END AS Active FROM OSLP WHERE SlpCode > 0 ORDER BY SlpName", cancellationToken: ct))).ToList();
+            "SELECT SlpCode AS Code, SlpName AS Name, CASE WHEN Active = 'Y' THEN 1 ELSE 0 END AS Active FROM OSLP WHERE SlpCode > 0 AND Active = 'Y'" + SalesScopeSql.CustomerPredicate(_scope.Current) + " ORDER BY SlpName", cancellationToken: ct))).ToList();
         dto.Warehouses = (await db.QueryAsync<WarehouseOptionDto>(new CommandDefinition("SELECT WhsCode AS Code, WhsName AS Name FROM OWHS ORDER BY WhsCode", cancellationToken: ct))).ToList();
         return dto;
     }
@@ -94,7 +96,7 @@ public class SqlSalesDetailReportsService : ISalesDetailReportsService
     // Client rule: ORDR/RDR1 lines with LineStatus = 'O' on non-cancelled orders; value = the FULL LineTotal of each open
     // line; balance quantity = RDR1.OpenCreQty. Salesperson = the line's own (the client's SO report uses RDR1.SlpCode),
     // falling back to the order header when the line has none (-1 = "no sales employee").
-    private static string OpenSoFrom => $@"
+    private static string OpenSoFromSql(string aroma) => $@"
         FROM ORDR h
         JOIN RDR1 l ON l.DocEntry = h.DocEntry
         LEFT JOIN OITM i ON i.ItemCode = l.ItemCode
@@ -110,28 +112,29 @@ public class SqlSalesDetailReportsService : ISalesDetailReportsService
           AND (@Slp IS NULL OR (CASE WHEN l.SlpCode IS NULL OR l.SlpCode = -1 THEN h.SlpCode ELSE l.SlpCode END) = @Slp)
           AND (@Customer IS NULL OR h.CardCode = @Customer)
           AND (@CustGroup IS NULL OR c.GroupCode = @CustGroup)
-          AND (@ItemLike IS NULL OR l.ItemCode LIKE @ItemLike OR l.Dscription LIKE @ItemLike)
+          AND (@ItemLike IS NULL OR l.ItemCode LIKE @ItemLike OR l.Dscription LIKE @ItemLike OR {aroma} LIKE @ItemLike)
           AND (@Cat IS NULL OR {ProductCategories.Expr("i")} = @Cat)";
 
     public async Task<OpenSalesOrderReportDto> GetOpenSalesOrderLinesAsync(DetailReportQuery q, CancellationToken ct = default)
     {
         var p = Params(q, out var from, out var to);
         using var db = _connectionFactory.CreateConnection();
+        var aroma = ItemUdf.Aroma(await ItemUdf.HasAromaAsync(db, ct));
 
         var totals = await db.QuerySingleAsync<OpenOrderTotalsDto>(new CommandDefinition($@"
             SELECT COUNT(*) AS OpenLines, COUNT(DISTINCT h.DocEntry) AS DistinctOrders,
                    ISNULL(SUM(l.Quantity), 0) AS OrderedQuantity, ISNULL(SUM(l.OpenCreQty), 0) AS OpenQuantity, ISNULL(SUM(l.LineTotal), 0) AS LineTotal
-            {OpenSoFrom}", p, cancellationToken: ct));
+            {OpenSoFromSql(aroma)}", p, cancellationToken: ct));
 
         var udf = await DispatchUdfs.LoadAsync(db, ct);
         var rows = (await db.QueryAsync<OpenSalesOrderLineDto>(new CommandDefinition($@"
             SELECT h.DocEntry, h.DocNum, h.DocDate AS PostingDate, l.ShipDate AS DueDate, {udf.EtaExpr("l")} AS EtaProduction,
                    DATEDIFF(DAY, h.DocDate, CAST(GETDATE() AS date)) AS DaysOpen, h.CardCode AS CustomerCode, h.CardName AS CustomerName,
-                   l.ItemCode, l.Dscription AS ItemDescription, {ProductCategories.Expr("i")} AS ProductCategory,
+                   l.ItemCode, {aroma} AS AromaCode, l.Dscription AS ItemDescription, {ProductCategories.Expr("i")} AS ProductCategory,
                    l.WhsCode AS WarehouseCode, w.WhsName AS Warehouse, u.Location AS Unit, s.SlpName AS Salesperson,
                    l.Quantity AS OrderedQuantity, l.OpenCreQty AS OpenQuantity, l.Price AS UnitPrice, l.LineTotal,
                    h.DocStatus AS DocumentStatus, l.LineStatus
-            {OpenSoFrom}
+            {OpenSoFromSql(aroma)}
             ORDER BY h.DocDate DESC, h.DocNum DESC, l.LineNum
             OFFSET @Skip ROWS FETCH NEXT @Take ROWS ONLY", p, cancellationToken: ct))).ToList();
 
@@ -139,32 +142,34 @@ public class SqlSalesDetailReportsService : ISalesDetailReportsService
     }
 
     // ------------------------------------------------------------------ Open Purchase Orders (client query)
-    private const string OpenPoFrom = @"
+    private static string OpenPoFromSql(string aroma) => $@"
         FROM OPOR h
         JOIN POR1 l ON l.DocEntry = h.DocEntry
         LEFT JOIN OWHS w ON w.WhsCode = l.WhsCode
+        LEFT JOIN OITM i ON i.ItemCode = l.ItemCode
         WHERE h.CANCELED = 'N' AND l.LineStatus = 'O'
           AND h.DocDate >= @From AND h.DocDate < DATEADD(DAY, 1, @To)
           AND (@Whs IS NULL OR l.WhsCode = @Whs)
           AND (@Branch IS NULL OR h.BPLId = @Branch)
           AND (@Customer IS NULL OR h.CardCode = @Customer)
-          AND (@ItemLike IS NULL OR l.ItemCode LIKE @ItemLike OR l.Dscription LIKE @ItemLike)";
+          AND (@ItemLike IS NULL OR l.ItemCode LIKE @ItemLike OR l.Dscription LIKE @ItemLike OR {aroma} LIKE @ItemLike)";
 
     public async Task<OpenPurchaseOrderReportDto> GetOpenPurchaseOrderLinesAsync(DetailReportQuery q, CancellationToken ct = default)
     {
         var p = Params(q, out var from, out var to);
         using var db = _connectionFactory.CreateConnection();
+        var aroma = ItemUdf.Aroma(await ItemUdf.HasAromaAsync(db, ct));
 
         var totals = await db.QuerySingleAsync<OpenOrderTotalsDto>(new CommandDefinition($@"
             SELECT COUNT(*) AS OpenLines, COUNT(DISTINCT h.DocEntry) AS DistinctOrders,
                    ISNULL(SUM(l.Quantity), 0) AS OrderedQuantity, ISNULL(SUM(l.OpenCreQty), 0) AS OpenQuantity, ISNULL(SUM(l.LineTotal), 0) AS LineTotal
-            {OpenPoFrom}", p, cancellationToken: ct));
+            {OpenPoFromSql(aroma)}", p, cancellationToken: ct));
 
         var rows = (await db.QueryAsync<OpenPurchaseOrderLineDto>(new CommandDefinition($@"
             SELECT h.DocEntry, h.DocNum, h.DocDate AS PostingDate, l.ShipDate AS DueDate, h.CardCode AS VendorCode, h.CardName AS VendorName,
-                   l.ItemCode, l.Dscription AS ItemDescription, l.WhsCode AS WarehouseCode, w.WhsName AS Warehouse,
+                   l.ItemCode, {aroma} AS AromaCode, l.Dscription AS ItemDescription, l.WhsCode AS WarehouseCode, w.WhsName AS Warehouse,
                    l.Quantity AS OrderedQuantity, l.OpenCreQty AS OpenQuantity, l.Price AS UnitPrice, l.LineTotal, h.DocStatus AS DocumentStatus
-            {OpenPoFrom}
+            {OpenPoFromSql(aroma)}
             ORDER BY h.DocDate DESC, h.DocNum DESC, l.LineNum
             OFFSET @Skip ROWS FETCH NEXT @Take ROWS ONLY", p, cancellationToken: ct))).ToList();
 
@@ -175,7 +180,8 @@ public class SqlSalesDetailReportsService : ISalesDetailReportsService
     // A/R invoice lines positive, A/R credit-memo lines with the sign reversed; cancelled documents excluded; unit = line
     // location; salesperson = document header. NetSales is the reconciled "client basis" amount (line total less the
     // document's header discount spread over its lines, excl. tax) so the footer reconciles with Total Turnover.
-    private static string RegisterCteSql(DispatchUdfs u) => RegisterCteTemplate
+    private static string RegisterCteSql(DispatchUdfs u, string aroma) => RegisterCteTemplate
+        .Replace("{AROMA}", aroma)
         .Replace("{LR}", u.LrNoExpr("h")).Replace("{LRDT}", u.LrDateExpr("h")).Replace("{TRN}", u.TransporterExpr("h"))
         .Replace("{ORD}", DispatchUdfs.OrderDateOfInvoiceLine("l"));
 
@@ -197,7 +203,7 @@ public class SqlSalesDetailReportsService : ISalesDetailReportsService
         ), x AS (
             SELECT r.Sgn, r.DocType, r.DocEntry, r.DocNum, r.DocDate AS PostingDate, r.CardCode AS CustomerCode, r.CardName AS CustomerName,
                    c.GroupCode AS CustGroupCode, g.GroupName AS CustomerGroup, r.SlpCode, s.SlpName AS Salesperson, r.BPLId, r.LocCode, r.WhsCode,
-                   r.ItemCode, r.Dscription AS ItemDescription, ProdCat = " + "{CAT}" + @",
+                   r.ItemCode, r.Dscription AS ItemDescription, ProdCat = " + "{CAT}" + @", {AROMA} AS AromaCode,
                    ISNULL(w.WhsName, r.WhsCode) AS Warehouse, u.Location AS Unit, r.LineNum,
                    r.Sgn * r.Quantity AS Quantity, r.Price AS Rate, r.Sgn * r.LineTotal AS BasicAmount,
                    r.Sgn * r.LineTotal * (CASE WHEN r.LineSum <> 0 THEN 1 - r.DiscSum / r.LineSum ELSE 1 END) AS NetSales,
@@ -221,7 +227,7 @@ public class SqlSalesDetailReportsService : ISalesDetailReportsService
           AND (@Slp IS NULL OR x.SlpCode = @Slp)
           AND (@Customer IS NULL OR x.CustomerCode = @Customer)
           AND (@CustGroup IS NULL OR x.CustGroupCode = @CustGroup)
-          AND (@ItemLike IS NULL OR x.ItemCode LIKE @ItemLike OR x.ItemDescription LIKE @ItemLike)
+          AND (@ItemLike IS NULL OR x.ItemCode LIKE @ItemLike OR x.ItemDescription LIKE @ItemLike OR x.AromaCode LIKE @ItemLike)
           AND (@Cat IS NULL OR x.ProdCat = @Cat)
           AND (@Sgn IS NULL OR x.Sgn = @Sgn)";
 
@@ -231,9 +237,10 @@ public class SqlSalesDetailReportsService : ISalesDetailReportsService
         p.Add("Sgn", (q.DocType ?? "").Trim().ToLowerInvariant() switch { "invoice" => 1, "creditmemo" => -1, _ => q.NetOfCreditNotes ? (int?)null : 1 });
         using var db = _connectionFactory.CreateConnection();
         var udf = await DispatchUdfs.LoadAsync(db, ct);
+        var aroma = ItemUdf.Aroma(await ItemUdf.HasAromaAsync(db, ct));
         // The LR / transporter / order-date lookups are NOT part of the CTE: SQL Server would evaluate them for every line of the period before sorting
         // (46 s for a financial year). They are fetched below for the invoices on the returned page only.
-        var cte = RegisterCteSql(DispatchUdfs.None).Replace("{CAT}", ProductCategories.Expr("i"));
+        var cte = RegisterCteSql(DispatchUdfs.None, aroma).Replace("{CAT}", ProductCategories.Expr("i"));
 
         var totals = await db.QuerySingleAsync<SalesRegisterTotalsDto>(new CommandDefinition($@"
             {cte}
@@ -244,7 +251,7 @@ public class SqlSalesDetailReportsService : ISalesDetailReportsService
         var rows = (await db.QueryAsync<SalesRegisterRowDto>(new CommandDefinition($@"
             {cte}
             SELECT x.DocType, x.DocEntry, x.DocNum, x.PostingDate, x.CustomerCode, x.CustomerName, x.CustomerGroup, x.Salesperson,
-                   x.ItemCode, x.ItemDescription, x.ProdCat AS ProductCategory, x.Warehouse, x.Unit, x.Quantity, x.Rate,
+                   x.ItemCode, x.AromaCode, x.ItemDescription, x.ProdCat AS ProductCategory, x.Warehouse, x.Unit, x.Quantity, x.Rate,
                    x.BasicAmount, x.NetSales, x.TaxAmount, x.NetSalesInclTax
             FROM x {RegisterWhere}
             ORDER BY x.PostingDate DESC, x.DocType, x.DocNum DESC, x.LineNum
@@ -279,9 +286,9 @@ public class SqlSalesDetailReportsService : ISalesDetailReportsService
     {
         var p = Params(q, out var from, out var to);
         p.Add("Sgn", q.NetOfCreditNotes ? (int?)null : 1);
-        var cte = RegisterCteSql(DispatchUdfs.None).Replace("{CAT}", ProductCategories.Expr("i"));
         var value = q.IncludeTax ? "x.NetSalesInclTax" : "x.NetSales";
         using var db = _connectionFactory.CreateConnection();
+        var cte = RegisterCteSql(DispatchUdfs.None, ItemUdf.Aroma(await ItemUdf.HasAromaAsync(db, ct))).Replace("{CAT}", ProductCategories.Expr("i"));
 
         var rows = (await db.QueryAsync<CustomerGroupSalesRowDto>(new CommandDefinition($@"
             {cte}
@@ -528,6 +535,8 @@ public class SqlSalesDetailReportsService : ISalesDetailReportsService
     // ------------------------------------------------------------------ Customers (the "Total Customers" tile)
     // Tile rule: customer accounts (CardType C) that are not frozen. With "new this quarter" the list switches to the tile's
     // hint definition (customers created since the financial-year quarter started, frozen or not).
+    private string CustomersFromScoped => CustomersFrom + SalesScopeSql.CustomerPredicate(_scope.Current, "c");
+
     private const string CustomersFrom = @"
         FROM OCRD c
         LEFT JOIN OCRG g ON g.GroupCode = c.GroupCode
@@ -555,15 +564,15 @@ public class SqlSalesDetailReportsService : ISalesDetailReportsService
         p.Add("SearchLike", Like(q.Search));
         using var db = _connectionFactory.CreateConnection();
 
-        var count = await db.ExecuteScalarAsync<int>(new CommandDefinition($"SELECT COUNT(*) {CustomersFrom}", p, cancellationToken: ct));
+        var count = await db.ExecuteScalarAsync<int>(new CommandDefinition($"SELECT COUNT(*) {CustomersFromScoped}", p, cancellationToken: ct));
         // The dashboard tile's own "new this quarter" count (all customers created since the quarter began).
         var newCount = await db.ExecuteScalarAsync<int>(new CommandDefinition(
-            "SELECT COUNT(*) FROM OCRD WHERE CardType = 'C' AND CreateDate >= @QStart", new { QStart = quarterStart }, cancellationToken: ct));
+            "SELECT COUNT(*) FROM OCRD WHERE CardType = 'C' AND CreateDate >= @QStart" + SalesScopeSql.CustomerPredicate(_scope.Current), new { QStart = quarterStart }, cancellationToken: ct));
 
         var rows = (await db.QueryAsync<CustomerRowDto>(new CommandDefinition($@"
             SELECT c.CardCode AS CustomerCode, c.CardName AS CustomerName, g.GroupName AS CustomerGroup, s.SlpName AS Salesperson,
                    a.City, c.CreateDate AS CreatedDate, ISNULL(c.Balance, 0) AS Balance
-            {CustomersFrom}
+            {CustomersFromScoped}
             ORDER BY c.CardName, c.CardCode
             OFFSET @Skip ROWS FETCH NEXT @Take ROWS ONLY", p, cancellationToken: ct))).ToList();
 
@@ -576,11 +585,12 @@ public class SqlSalesDetailReportsService : ISalesDetailReportsService
 
     // ------------------------------------------------------------------ Pending Invoices = open deliveries not yet invoiced
     // Tile rule: deliveries with DocStatus Open and not cancelled; count and DocTotal. This is pending BILLING, not payment.
-    private const string PendingFrom = @"
+    private static readonly string PendingFrom = $@"
         FROM ODLN h
         LEFT JOIN OSLP s ON s.SlpCode = h.SlpCode
         LEFT JOIN OBPL b ON b.BPLId = h.BPLId
         WHERE h.DocStatus = 'O' AND h.CANCELED = 'N'
+          AND {DeliveryRules.ExcludeIntercompany("h")}
           AND (@Customer IS NULL OR h.CardCode = @Customer)
           AND (@Slp IS NULL OR h.SlpCode = @Slp)
           AND (@Branch IS NULL OR h.BPLId = @Branch)";
@@ -621,12 +631,14 @@ public class SqlSalesDetailReportsService : ISalesDetailReportsService
         var lineAmt = SalesAmount.Line(q.IncludeTax, "l");
         const string where = "h.CANCELED = 'N' AND h.DocDate >= @From AND h.DocDate < DATEADD(DAY, 1, @To)";
 
+        using var db = _connectionFactory.CreateConnection();
+        var aroma = ItemUdf.Aroma(await ItemUdf.HasAromaAsync(db, ct));
         string g;
         if (mode == "item")
         {
             g = $@"g AS (
-                SELECT l.ItemCode AS K, MAX(l.Dscription) AS N, COUNT(DISTINCT h.DocEntry) AS Invoices, SUM(l.Quantity) AS Qty, SUM({lineAmt}) AS Value
-                FROM INV1 l JOIN OINV h ON h.DocEntry = l.DocEntry
+                SELECT l.ItemCode AS K, MAX(l.Dscription) AS N, MAX({aroma}) AS A, COUNT(DISTINCT h.DocEntry) AS Invoices, SUM(l.Quantity) AS Qty, SUM({lineAmt}) AS Value
+                FROM INV1 l JOIN OINV h ON h.DocEntry = l.DocEntry LEFT JOIN OITM i ON i.ItemCode = l.ItemCode
                 WHERE {where} AND l.ItemCode IS NOT NULL
                 GROUP BY l.ItemCode)";
         }
@@ -646,12 +658,11 @@ public class SqlSalesDetailReportsService : ISalesDetailReportsService
                 SELECT {key} AS K, SUM(l.Quantity) AS Qty
                 FROM OINV h JOIN INV1 l ON l.DocEntry = h.DocEntry {join} WHERE {where} GROUP BY {key}),
             g AS (
-                SELECT hd.K, hd.N, hd.Invoices, ISNULL(qt.Qty, 0) AS Qty, hd.Value FROM hd LEFT JOIN qt ON qt.K = hd.K)";
+                SELECT hd.K, hd.N, CAST(NULL AS nvarchar(20)) AS A, hd.Invoices, ISNULL(qt.Qty, 0) AS Qty, hd.Value FROM hd LEFT JOIN qt ON qt.K = hd.K)";
         }
-        var filter = "WHERE (@SearchLike IS NULL OR g.K LIKE @SearchLike OR g.N LIKE @SearchLike)";
+        var filter = "WHERE (@SearchLike IS NULL OR g.K LIKE @SearchLike OR g.N LIKE @SearchLike OR g.A LIKE @SearchLike)";
         var order = mode == "month" ? "g.K ASC" : "g.Value DESC, g.K";
 
-        using var db = _connectionFactory.CreateConnection();
         var totals = await db.QuerySingleAsync<SalesAnalysisTotalsDto>(new CommandDefinition($@"
             WITH {g}
             SELECT COUNT(*) AS Rows, ISNULL(SUM(g.Invoices), 0) AS Invoices, ISNULL(SUM(g.Qty), 0) AS Quantity, ISNULL(SUM(g.Value), 0) AS Value
@@ -659,7 +670,7 @@ public class SqlSalesDetailReportsService : ISalesDetailReportsService
 
         var rows = (await db.QueryAsync<SalesAnalysisRowDto>(new CommandDefinition($@"
             WITH {g}
-            SELECT g.K AS [Key], g.N AS Name, g.Invoices, g.Qty AS Quantity, g.Value
+            SELECT g.K AS [Key], g.N AS Name, g.A AS AromaCode, g.Invoices, g.Qty AS Quantity, g.Value
             FROM g {filter}
             ORDER BY {order}
             OFFSET @Skip ROWS FETCH NEXT @Take ROWS ONLY", p, cancellationToken: ct))).ToList();
@@ -742,6 +753,7 @@ public class SqlSalesDetailReportsService : ISalesDetailReportsService
             LEFT JOIN CRD1 b ON b.CardCode = c.CardCode AND b.AdresType = 'B' AND c.BillToDef = b.Address
             WHERE (@Branch IS NULL OR oi.BPLId = @Branch)
               AND (@Group IS NULL OR c.GroupCode = @Group) AND (@Slp IS NULL OR c.SlpCode = @Slp)
+              AND (@HasSlps = 0 OR c.SlpCode IN @Slps)
         )";
 
     private static string DocTypeLabel(int transType) => transType switch
@@ -750,7 +762,7 @@ public class SqlSalesDetailReportsService : ISalesDetailReportsService
         321 => "Internal Reconciliation", 46 => "Outgoing Payment", _ => $"Document type {transType}"
     };
 
-    private static DynamicParameters OutstandingParams(LedgerOutstandingQuery q, out DateTime asOf)
+    private DynamicParameters OutstandingParams(LedgerOutstandingQuery q, out DateTime asOf)
     {
         asOf = (q.AsOf ?? DateTime.Today).Date;
         var pageSize = Math.Clamp(q.PageSize, 1, 5000);
@@ -760,6 +772,7 @@ public class SqlSalesDetailReportsService : ISalesDetailReportsService
         p.Add("Branch", q.Branch);
         p.Add("Group", q.CustomerGroup);
         p.Add("Slp", q.Salesperson);
+        p.AddSlps(_scope.Current); // a salesperson login only sees the customers assigned to its salespersons
         p.Add("Skip", (Math.Max(1, q.Page) - 1) * pageSize);
         p.Add("Take", pageSize);
         return p;

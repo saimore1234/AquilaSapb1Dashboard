@@ -41,7 +41,7 @@ export default function PurchaseOrders() {
       keyField={(r) => String(r.docEntry)}
       docEntryField={(r) => r.docEntry}
       routeBase="/purchase/orders"
-      searchPlaceholder="PO #, vendor code, vendor name…"
+      searchPlaceholder="PO #, vendor code, vendor name, item or Aroma code…"
       filterFields={['date', 'vendor', 'status', 'buyer', 'warehouse']}
       emptyMessage="No purchase orders found."
       renderMobileCard={(r) => (

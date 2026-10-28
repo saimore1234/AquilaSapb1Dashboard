@@ -55,6 +55,36 @@ public class SqlAdminService : IAdminService
         return (await db.QueryAsync<UserListItemDto>(new CommandDefinition(sql, cancellationToken: ct))).ToList();
     }
 
+    public async Task<Dictionary<int, List<int>>> GetSalespersonLinksAsync(string companyCode, CancellationToken ct = default)
+    {
+        using var db = _connectionFactory.CreateConnection();
+        try
+        {
+            var rows = await db.QueryAsync<(int UserId, int SapSlpCode)>(new CommandDefinition(
+                "SELECT UserId, SapSlpCode FROM dbo.UserSalespersonMap WHERE CompanyCode = @Company ORDER BY UserId, SapSlpCode", new { Company = companyCode }, cancellationToken: ct));
+            return rows.GroupBy(r => r.UserId).ToDictionary(g => g.Key, g => g.Select(r => r.SapSlpCode).ToList());
+        }
+        catch (SqlException)
+        {
+            return new Dictionary<int, List<int>>(); // table not created yet (db/008): nobody is linked
+        }
+    }
+
+    public async Task<bool> SetSalespersonLinksAsync(int userId, string companyCode, IReadOnlyCollection<int> slpCodes, string changedBy, CancellationToken ct = default)
+    {
+        using var db = _connectionFactory.CreateConnection();
+        db.Open();
+        using var tx = db.BeginTransaction();
+        var exists = await db.ExecuteScalarAsync<int>(new CommandDefinition("SELECT COUNT(*) FROM Users WHERE Id = @Id", new { Id = userId }, transaction: tx, cancellationToken: ct));
+        if (exists == 0) { tx.Rollback(); return false; }
+        await db.ExecuteAsync(new CommandDefinition("DELETE FROM dbo.UserSalespersonMap WHERE UserId = @UserId AND CompanyCode = @Company", new { UserId = userId, Company = companyCode }, transaction: tx, cancellationToken: ct));
+        foreach (var code in slpCodes.Distinct())
+            await db.ExecuteAsync(new CommandDefinition("INSERT INTO dbo.UserSalespersonMap (UserId, CompanyCode, SapSlpCode, CreatedBy) VALUES (@UserId, @Company, @Code, @By)",
+                new { UserId = userId, Company = companyCode, Code = code, By = changedBy }, transaction: tx, cancellationToken: ct));
+        tx.Commit();
+        return true;
+    }
+
     public async Task<int> CreateUserAsync(CreateUserDto dto, string passwordHash, CancellationToken ct = default)
     {
         using var db = _connectionFactory.CreateConnection();

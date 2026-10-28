@@ -41,6 +41,11 @@ public interface IAdminService
     Task<bool> ResetPasswordAsync(int id, string passwordHash, CancellationToken ct = default);
     Task<bool> DeleteUserAsync(int id, CancellationToken ct = default);
 
+    /// <summary>All user -> SAP salesperson links for one portal company (dbo.UserSalespersonMap).</summary>
+    Task<Dictionary<int, List<int>>> GetSalespersonLinksAsync(string companyCode, CancellationToken ct = default);
+    /// <summary>Replaces the links of one user for one company. Returns false when the user does not exist.</summary>
+    Task<bool> SetSalespersonLinksAsync(int userId, string companyCode, IReadOnlyCollection<int> slpCodes, string changedBy, CancellationToken ct = default);
+
     Task<List<RoleListItemDto>> GetRolesAsync(CancellationToken ct = default);
     Task<int> CreateRoleAsync(CreateRoleDto dto, CancellationToken ct = default);
     Task<bool> UpdateRoleAsync(int id, CreateRoleDto dto, CancellationToken ct = default);

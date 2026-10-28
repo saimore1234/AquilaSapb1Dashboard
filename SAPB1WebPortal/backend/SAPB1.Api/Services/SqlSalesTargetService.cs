@@ -54,13 +54,15 @@ public class SqlSalesTargetService : ISalesTargetService
     private readonly ICompanyConnectionFactory _sap;
     private readonly ICompanyContext _company;
     private readonly IConfiguration _config;
+    private readonly ISalesScope _scope;
 
-    public SqlSalesTargetService(IPortalConnectionFactory portal, ICompanyConnectionFactory sap, ICompanyContext company, IConfiguration config)
+    public SqlSalesTargetService(IPortalConnectionFactory portal, ICompanyConnectionFactory sap, ICompanyContext company, IConfiguration config, ISalesScope scope)
     {
         _portal = portal;
         _sap = sap;
         _company = company;
         _config = config;
+        _scope = scope;
     }
 
     // ------------------------------------------------------------------
@@ -72,7 +74,7 @@ public class SqlSalesTargetService : ISalesTargetService
         var dto = new SalesTargetOptionsDto();
         // OSLP.SlpCode -1 is SAP's built-in "no sales employee"; Active is 'Y'/'N'.
         dto.Salespersons = (await db.QueryAsync<SalespersonOptionDto>(new CommandDefinition(
-            "SELECT SlpCode AS Code, SlpName AS Name, CASE WHEN Active = 'Y' THEN 1 ELSE 0 END AS Active FROM OSLP WHERE SlpCode > 0 ORDER BY SlpName",
+            "SELECT SlpCode AS Code, SlpName AS Name, CASE WHEN Active = 'Y' THEN 1 ELSE 0 END AS Active FROM OSLP WHERE SlpCode > 0" + SalesScopeSql.CustomerPredicate(_scope.Current) + " ORDER BY SlpName",
             cancellationToken: ct))).ToList();
         dto.Units = (await db.QueryAsync<TurnoverOptionDto>(new CommandDefinition(
             "SELECT Code, Location AS Name FROM OLCT ORDER BY Location", cancellationToken: ct))).ToList();
@@ -94,11 +96,12 @@ public class SqlSalesTargetService : ISalesTargetService
         var escaped = term is null ? null : Regex.Replace(term, @"[\[%_]", "[$0]");
 
         using var db = _sap.CreateConnection();
-        return (await db.QueryAsync<SalesTargetItemOptionDto>(new CommandDefinition(@"
-            SELECT i.ItemCode AS Code, i.ItemName AS Name, g.ItmsGrpNam AS [Group], i.InvntryUom AS Uom
+        var aroma = ItemUdf.Aroma(await ItemUdf.HasAromaAsync(db, ct));
+        return (await db.QueryAsync<SalesTargetItemOptionDto>(new CommandDefinition($@"
+            SELECT i.ItemCode AS Code, {aroma} AS AromaCode, i.ItemName AS Name, g.ItmsGrpNam AS [Group], i.InvntryUom AS Uom
             FROM OITM i LEFT JOIN OITB g ON g.ItmsGrpCod = i.ItmsGrpCod
             WHERE i.frozenFor = 'N' AND (@All = 1 OR i.SellItem = 'Y')
-              AND (@Like IS NULL OR i.ItemCode LIKE @Like OR i.ItemName LIKE @Like)
+              AND (@Like IS NULL OR i.ItemCode LIKE @Like OR i.ItemName LIKE @Like OR {aroma} LIKE @Like)
             ORDER BY CASE WHEN i.ItemCode = @Term THEN 0 WHEN i.ItemCode LIKE @Prefix THEN 1 ELSE 2 END, i.ItemCode
             OFFSET @Offset ROWS FETCH NEXT @Limit ROWS ONLY", new
         {
@@ -266,6 +269,19 @@ public class SqlSalesTargetService : ISalesTargetService
         var search = string.IsNullOrWhiteSpace(q.Search) ? null : q.Search.Trim();
         var item = string.IsNullOrWhiteSpace(q.Item) ? null : q.Item.Trim();
 
+        // Target lines keep only the item code and name, so an Aroma Code search is resolved to item codes in SAP first (empty = no match).
+        var aromaItems = new[] { "" };
+        if (search is not null)
+        {
+            using var sap = _sap.CreateConnection();
+            if (await ItemUdf.HasAromaAsync(sap, ct))
+            {
+                var found = (await sap.QueryAsync<string>(new CommandDefinition("SELECT TOP 500 ItemCode FROM OITM WHERE U_AromaCode LIKE @Like", new { Like = $"%{search}%" }, cancellationToken: ct))).ToArray();
+                if (found.Length > 0) aromaItems = found;
+            }
+        }
+
+        var (hasSlps, slpList) = SalesScopeSql.Resolve(_scope.Current);
         List<SalesTargetDto> all;
         using (var db = _portal.CreateConnection())
         {
@@ -278,11 +294,12 @@ public class SqlSalesTargetService : ISalesTargetService
                   AND (@PT IS NULL OR t.TargetPeriodType = @PT)
                   AND (@Unit IS NULL OR t.UnitCode = @Unit)
                   AND (@Slp IS NULL OR t.SapSlpCode = @Slp)
+                  AND (@HasSlps = 0 OR t.SapSlpCode IN @Slps)
                   AND (@FromDate IS NULL OR t.PeriodEndDate >= @FromDate)
                   AND (@ToDate IS NULL OR t.PeriodStartDate <= @ToDate)
                   AND (@Item IS NULL OR EXISTS (SELECT 1 FROM dbo.SalespersonTargetLines x WHERE x.TargetId = t.Id AND x.ItemCode = @Item))
                   AND (@Search IS NULL OR t.SalespersonName LIKE @Like OR CAST(t.Id AS NVARCHAR(20)) = @Search OR CAST(t.SapSlpCode AS NVARCHAR(20)) = @Search
-                       OR EXISTS (SELECT 1 FROM dbo.SalespersonTargetLines x WHERE x.TargetId = t.Id AND (x.ItemCode LIKE @Like OR x.ItemName LIKE @Like)))
+                       OR EXISTS (SELECT 1 FROM dbo.SalespersonTargetLines x WHERE x.TargetId = t.Id AND (x.ItemCode LIKE @Like OR x.ItemName LIKE @Like OR x.ItemCode IN @AromaItems)))
                 ORDER BY t.PeriodStartDate DESC, t.SalespersonName, t.Id DESC", new
             {
                 Company = _company.CompanyCode,
@@ -295,6 +312,9 @@ public class SqlSalesTargetService : ISalesTargetService
                 ToDate = q.ToDate?.Date,
                 Item = item,
                 Search = search,
+                AromaItems = aromaItems,
+                HasSlps = hasSlps,
+                Slps = slpList,
                 Like = search is null ? null : $"%{search}%"
             }, cancellationToken: ct))).ToList();
         }
@@ -334,6 +354,7 @@ public class SqlSalesTargetService : ISalesTargetService
             $"SELECT {TargetColumns} FROM dbo.SalespersonTargets t WHERE t.Id = @Id AND t.CompanyCode = @Company",
             new { Id = id, Company = _company.CompanyCode }, cancellationToken: ct));
         if (target is null) return null;
+        if (_scope.Current.Restricted && !(target.Scope == "Salesperson" && _scope.Current.SlpCodes.Contains(target.SapSlpCode))) return null; // not theirs: same as not found
 
         var history = (await db.QueryAsync<SalesTargetAuditDto>(new CommandDefinition(
             "SELECT Id, Action, PerformedBy, PerformedAt, Detail FROM dbo.SalespersonTargetAudit WHERE TargetId = @Id AND CompanyCode = @Company ORDER BY PerformedAt, Id",
@@ -505,14 +526,22 @@ public class SqlSalesTargetService : ISalesTargetService
 
     public async Task<TargetPerformanceDto> GetPerformanceAsync(TargetPerformanceQuery q, CancellationToken ct = default)
     {
-        var scope = ScopeOf(q.Scope);
+        var sc = _scope.Current;
+        var scope = sc.Restricted ? "Salesperson" : ScopeOf(q.Scope);
         var m = FyPattern.Match(q.FinancialYear ?? "");
         var y1 = m.Success && int.Parse(m.Groups[2].Value) == (int.Parse(m.Groups[1].Value) + 1) % 100 ? int.Parse(m.Groups[1].Value) : FyStartYear(DateTime.Today);
         var start = new DateTime(y1, 4, 1);
         var end = start.AddYears(1).AddDays(-1);
         var unit = scope == "Company" ? AllUnits : (q.Unit ?? AllUnits);
         var slp = scope == "Salesperson" ? (q.Salesperson ?? 0) : 0;
+        if (sc.Restricted) slp = sc.SlpCodes.Contains(slp) ? slp : (sc.SlpCodes.Length > 0 ? sc.SlpCodes[0] : 0);
         var dto = new TargetPerformanceDto { Scope = scope, FinancialYear = FyLabel(y1), IncludeTax = false };
+        if (sc.Denied)
+        {
+            dto.EntityLabel = "Your login is not linked to a salesperson yet";
+            dto.Note = "Ask an administrator to link your login to your SAP salesperson (Administration > Users).";
+            return dto;
+        }
 
         dto.EntityLabel = scope == "Company" ? "Company (all units)"
             : scope == "Unit" ? (unit == AllUnits ? "Select a unit" : (await FindUnitNameAsync(unit, ct) is string un ? UnitLabels().GetValueOrDefault(Norm(un)) ?? un : $"Unit {unit}"))

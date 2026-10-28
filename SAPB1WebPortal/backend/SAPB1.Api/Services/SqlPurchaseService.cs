@@ -82,7 +82,7 @@ public class SqlPurchaseService : IPurchaseService
     // through Dapper parameters, never string-concatenated.
     // ---------------------------------------------------------------
     private static (string WhereSql, DynamicParameters Parameters) BuildFilters(
-        PurchaseDocumentQuery query, bool includeBuyer, bool includeWarehouseExists, string? lineTableForWarehouse)
+        PurchaseDocumentQuery query, bool includeBuyer, bool includeWarehouseExists, string? lineTableForWarehouse, string? aroma = null)
     {
         var statusCode = query.Status?.Trim().ToLowerInvariant() switch
         {
@@ -91,9 +91,13 @@ public class SqlPurchaseService : IPurchaseService
             _ => (string?)null
         };
 
-        var sql = @"
+        // The search also matches ANY line's item (code, name or Aroma Code) through the item master — fast, because the item master is small (aroma = null when the company has no such field).
+        var itemSearch = lineTableForWarehouse is null ? "" :
+            $" OR EXISTS (SELECT 1 FROM {lineTableForWarehouse} sl WHERE sl.DocEntry = c.DocEntry AND sl.ItemCode IN (SELECT si.ItemCode FROM OITM si WHERE si.ItemCode LIKE @SearchLike OR si.ItemName LIKE @SearchLike{(aroma is null ? "" : $" OR {aroma} LIKE @SearchLike")}))";
+
+        var sql = $@"
             WHERE (@Search IS NULL OR CAST(c.DocNum AS NVARCHAR(20)) LIKE @SearchLike
-                   OR c.CardCode LIKE @SearchLike OR v.CardName LIKE @SearchLike)
+                   OR c.CardCode LIKE @SearchLike OR v.CardName LIKE @SearchLike{itemSearch})
               AND (@DateFrom IS NULL OR c.DocDate >= @DateFrom)
               AND (@DateTo IS NULL OR c.DocDate <= @DateTo)
               AND (@Status IS NULL OR c.DocStatus = @Status)
@@ -172,7 +176,7 @@ public class SqlPurchaseService : IPurchaseService
     public async Task<PagedResult<PurchaseRequestDto>> GetRequestsAsync(PurchaseDocumentQuery query, CancellationToken ct = default)
     {
         using var db = _connectionFactory.CreateConnection();
-        var (whereSql, p) = BuildFilters(query, includeBuyer: false, includeWarehouseExists: true, lineTableForWarehouse: "PRQ1");
+        var (whereSql, p) = BuildFilters(query, includeBuyer: false, includeWarehouseExists: true, lineTableForWarehouse: "PRQ1", aroma: ItemUdf.Aroma(await ItemUdf.HasAromaAsync(db, ct), "si"));
 
         var countSql = $"SELECT COUNT(*) FROM OPRQ c LEFT JOIN OCRD v ON v.CardCode = c.CardCode {whereSql}";
         var total = await db.ExecuteScalarAsync<int>(new CommandDefinition(countSql, p, cancellationToken: ct));
@@ -237,7 +241,7 @@ public class SqlPurchaseService : IPurchaseService
     public async Task<PagedResult<PurchaseQuotationDto>> GetQuotationsAsync(PurchaseDocumentQuery query, CancellationToken ct = default)
     {
         using var db = _connectionFactory.CreateConnection();
-        var (whereSql, p) = BuildFilters(query, includeBuyer: true, includeWarehouseExists: true, lineTableForWarehouse: "PQT1");
+        var (whereSql, p) = BuildFilters(query, includeBuyer: true, includeWarehouseExists: true, lineTableForWarehouse: "PQT1", aroma: ItemUdf.Aroma(await ItemUdf.HasAromaAsync(db, ct), "si"));
 
         var countSql = $"SELECT COUNT(*) FROM OPQT c LEFT JOIN OCRD v ON v.CardCode = c.CardCode {whereSql}";
         var total = await db.ExecuteScalarAsync<int>(new CommandDefinition(countSql, p, cancellationToken: ct));
@@ -308,7 +312,7 @@ public class SqlPurchaseService : IPurchaseService
     public async Task<PagedResult<PurchaseOrderDto>> GetOrdersAsync(PurchaseDocumentQuery query, CancellationToken ct = default)
     {
         using var db = _connectionFactory.CreateConnection();
-        var (whereSql, p) = BuildFilters(query, includeBuyer: true, includeWarehouseExists: true, lineTableForWarehouse: "POR1");
+        var (whereSql, p) = BuildFilters(query, includeBuyer: true, includeWarehouseExists: true, lineTableForWarehouse: "POR1", aroma: ItemUdf.Aroma(await ItemUdf.HasAromaAsync(db, ct), "si"));
 
         var countSql = $"SELECT COUNT(*) FROM OPOR c LEFT JOIN OCRD v ON v.CardCode = c.CardCode {whereSql}";
         var total = await db.ExecuteScalarAsync<int>(new CommandDefinition(countSql, p, cancellationToken: ct));
@@ -379,7 +383,7 @@ public class SqlPurchaseService : IPurchaseService
     public async Task<PagedResult<GrpoDto>> GetGrposAsync(PurchaseDocumentQuery query, CancellationToken ct = default)
     {
         using var db = _connectionFactory.CreateConnection();
-        var (whereSql, p) = BuildFilters(query, includeBuyer: false, includeWarehouseExists: true, lineTableForWarehouse: "PDN1");
+        var (whereSql, p) = BuildFilters(query, includeBuyer: false, includeWarehouseExists: true, lineTableForWarehouse: "PDN1", aroma: ItemUdf.Aroma(await ItemUdf.HasAromaAsync(db, ct), "si"));
 
         var countSql = $"SELECT COUNT(*) FROM OPDN c LEFT JOIN OCRD v ON v.CardCode = c.CardCode {whereSql}";
         var total = await db.ExecuteScalarAsync<int>(new CommandDefinition(countSql, p, cancellationToken: ct));
@@ -448,7 +452,7 @@ public class SqlPurchaseService : IPurchaseService
     public async Task<PagedResult<ApInvoiceDto>> GetInvoicesAsync(PurchaseDocumentQuery query, CancellationToken ct = default)
     {
         using var db = _connectionFactory.CreateConnection();
-        var (whereSql, p) = BuildFilters(query, includeBuyer: false, includeWarehouseExists: true, lineTableForWarehouse: "PCH1");
+        var (whereSql, p) = BuildFilters(query, includeBuyer: false, includeWarehouseExists: true, lineTableForWarehouse: "PCH1", aroma: ItemUdf.Aroma(await ItemUdf.HasAromaAsync(db, ct), "si"));
 
         var countSql = $"SELECT COUNT(*) FROM OPCH c LEFT JOIN OCRD v ON v.CardCode = c.CardCode {whereSql}";
         var total = await db.ExecuteScalarAsync<int>(new CommandDefinition(countSql, p, cancellationToken: ct));
@@ -518,7 +522,7 @@ public class SqlPurchaseService : IPurchaseService
     public async Task<PagedResult<ApCreditMemoDto>> GetCreditMemosAsync(PurchaseDocumentQuery query, CancellationToken ct = default)
     {
         using var db = _connectionFactory.CreateConnection();
-        var (whereSql, p) = BuildFilters(query, includeBuyer: false, includeWarehouseExists: true, lineTableForWarehouse: "RPC1");
+        var (whereSql, p) = BuildFilters(query, includeBuyer: false, includeWarehouseExists: true, lineTableForWarehouse: "RPC1", aroma: ItemUdf.Aroma(await ItemUdf.HasAromaAsync(db, ct), "si"));
 
         var countSql = $"SELECT COUNT(*) FROM ORPC c LEFT JOIN OCRD v ON v.CardCode = c.CardCode {whereSql}";
         var total = await db.ExecuteScalarAsync<int>(new CommandDefinition(countSql, p, cancellationToken: ct));

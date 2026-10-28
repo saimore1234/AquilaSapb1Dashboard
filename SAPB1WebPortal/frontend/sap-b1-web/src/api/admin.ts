@@ -14,8 +14,7 @@ import type {
   UpdateServerConfigurationPayload,
   TestConnectionPayload,
   TestConnectionResult,
-  TestAllResult
-} from '../types';
+  TestAllResult, UserSalespersonLinks } from '../types';
 
 async function unwrap<T>(promise: Promise<{ data: ApiResponse<T> }>, failMessage: string): Promise<T> {
   const { data } = await promise;
@@ -26,6 +25,8 @@ async function unwrap<T>(promise: Promise<{ data: ApiResponse<T> }>, failMessage
 }
 
 // Users
+export const getSalespersonLinks = () => unwrap<UserSalespersonLinks>(apiClient.get('/admin/users/salesperson-links'), 'Failed to load salesperson links.');
+export const setUserSalespersons = (id: number, salespersons: number[]) => apiClient.put(`/admin/users/${id}/salespersons`, { salespersons });
 export const getUsers = () => unwrap<AdminUser[]>(apiClient.get('/admin/users'), 'Failed to load users.');
 export const createUser = (payload: CreateUserPayload) => unwrap<{ id: number }>(apiClient.post('/admin/users', payload), 'Failed to create user.');
 export const updateUser = (id: number, payload: UpdateUserPayload) => apiClient.put(`/admin/users/${id}`, payload);

@@ -86,6 +86,7 @@ builder.Services.AddScoped<ISalesService, SqlSalesService>();
 builder.Services.AddScoped<ISalesReportsService, SqlSalesReportsService>();
 builder.Services.AddScoped<ISalesDetailReportsService, SqlSalesDetailReportsService>();
 builder.Services.AddScoped<ISalesPerformanceService, SqlSalesPerformanceService>();
+builder.Services.AddScoped<ISalesScope, SalesScope>();
 builder.Services.AddScoped<ISalesTargetService, SqlSalesTargetService>();
 builder.Services.AddScoped<IProductionService, SqlProductionService>();
 builder.Services.AddScoped<IFinanceService, SqlFinanceService>();

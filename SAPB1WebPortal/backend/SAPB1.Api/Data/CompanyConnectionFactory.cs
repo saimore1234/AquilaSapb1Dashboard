@@ -26,13 +26,16 @@ public class CompanyConnectionFactory : ICompanyConnectionFactory
     private readonly ICompanyRegistry _registry;
     private readonly ICompanyConfigurationProvider _dbConfig;
     private readonly IReadOnlyDictionary<string, string> _connectionStrings;
+    private readonly ISalesScope _scope;
 
     public CompanyConnectionFactory(
         ICompanyContext companyContext,
         ICompanyRegistry registry,
         ICompanyConfigurationProvider dbConfig,
-        IConfiguration configuration)
+        IConfiguration configuration,
+        ISalesScope scope)
     {
+        _scope = scope;
         _companyContext = companyContext;
         _registry = registry;
         _dbConfig = dbConfig;
@@ -45,6 +48,14 @@ public class CompanyConnectionFactory : ICompanyConnectionFactory
     }
 
     public IDbConnection CreateConnection()
+    {
+        var raw = CreateUnscopedConnection();
+        var scope = _scope.Current;
+        // A salesperson login only ever gets a connection whose queries are rewritten to that salesperson's documents (see SqlScopeRewriter).
+        return scope.Restricted && raw is System.Data.Common.DbConnection db ? new ScopedDbConnection(db, scope.SlpCodes) : raw;
+    }
+
+    public IDbConnection CreateUnscopedConnection()
     {
         var code = _companyContext.CompanyCode;
         if (string.IsNullOrWhiteSpace(code))

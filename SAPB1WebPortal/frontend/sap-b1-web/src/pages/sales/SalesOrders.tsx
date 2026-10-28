@@ -43,7 +43,7 @@ export default function SalesOrders() {
       keyField={(r) => String(r.docEntry)}
       docEntryField={(r) => r.docEntry}
       routeBase="/sales/orders"
-      searchPlaceholder="SO #, customer code, customer name…"
+      searchPlaceholder="SO #, customer code, customer name, item or Aroma code…"
       filterFields={['date', 'customer', 'status', 'salesEmployee', 'warehouse']}
       emptyMessage="No sales orders found."
       renderMobileCard={(r) => (

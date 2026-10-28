@@ -14,19 +14,19 @@ const foot = 'px-3 py-2.5 font-semibold bg-surface-tertiary/60 border-t border-b
 const soCols: Col<OpenSalesOrderLine>[] = [
   { key: 'no', header: 'Order No.', render: (r) => `SO/${r.docNum}`, csv: (r) => r.docNum, nowrap: true },
   { key: 'date', header: 'Posting Date', render: (r) => formatDate(r.postingDate), csv: (r) => r.postingDate.slice(0, 10), nowrap: true },
+  { key: 'days', header: 'No. of Days', align: 'right', render: (r) => r.daysOpen, csv: (r) => r.daysOpen },
   { key: 'cust', header: 'Customer', render: (r) => (<><div className="text-ink-primary">{r.customerName ?? r.customerCode}</div><div className="text-xs text-ink-tertiary">{r.customerCode}</div></>), csv: (r) => `${r.customerCode} - ${r.customerName ?? ''}` },
   { key: 'ic', header: 'Item Code', render: (r) => dash(r.itemCode), csv: (r) => r.itemCode, nowrap: true },
+  { key: 'aroma', header: 'Aroma Code', render: (r) => dash(r.aromaCode), csv: (r) => r.aromaCode, nowrap: true },
   { key: 'id', header: 'Item Description', render: (r) => dash(r.itemDescription), csv: (r) => r.itemDescription },
-  { key: 'whs', header: 'Warehouse', render: (r) => dash(r.warehouse ?? r.warehouseCode), csv: (r) => r.warehouse ?? r.warehouseCode },
+  { key: 'eta', header: 'ETA (Production)', render: (r) => dash(r.etaProduction), csv: (r) => r.etaProduction, nowrap: true },
   { key: 'unit', header: 'Unit', render: (r) => dash(r.unit), csv: (r) => r.unit, nowrap: true },
   { key: 'sp', header: 'Salesperson', render: (r) => dash(r.salesperson), csv: (r) => r.salesperson },
   { key: 'oq', header: 'Ordered Qty', align: 'right', render: (r) => qty.format(r.orderedQuantity), csv: (r) => r.orderedQuantity },
   { key: 'bq', header: 'Open Qty', align: 'right', render: (r) => qty.format(r.openQuantity), csv: (r) => r.openQuantity },
   { key: 'pr', header: 'Unit Price', align: 'right', render: (r) => rupees.format(r.unitPrice), csv: (r) => r.unitPrice },
   { key: 'lt', header: 'Line Total', align: 'right', render: (r) => rupees.format(r.lineTotal), csv: (r) => r.lineTotal },
-  { key: 'st', header: 'Status', render: (r) => (r.documentStatus === 'O' ? 'Open' : 'Closed'), csv: (r) => (r.documentStatus === 'O' ? 'Open' : 'Closed') },
-  { key: 'eta', header: 'ETA (Production)', render: (r) => dash(r.etaProduction), csv: (r) => r.etaProduction, nowrap: true },
-  { key: 'days', header: 'No. of Days', align: 'right', render: (r) => r.daysOpen, csv: (r) => r.daysOpen }
+  { key: 'st', header: 'Status', render: (r) => (r.documentStatus === 'O' ? 'Open' : 'Closed'), csv: (r) => (r.documentStatus === 'O' ? 'Open' : 'Closed') }
 ];
 
 export function OpenSalesOrderLinesSection() {
@@ -40,19 +40,17 @@ export function OpenSalesOrderLinesSection() {
       filters={['unit', 'warehouse', 'branch', 'salesperson', 'customerGroup', 'customer', 'category', 'item', 'allDates']}
       rowKey={(r, i) => `${r.docEntry}-${r.itemCode}-${i}`}
       csvName="open-sales-order-lines"
-      footer={(rep) => (
+      footer={(rep, ctx) => (
         <tr>
-          <td className={foot} colSpan={8}>Open lines: {rupees.format(rep.totals.openLines)} · Distinct orders: {rupees.format(rep.totals.distinctOrders)} (all pages)</td>
+          <td className={foot} colSpan={ctx.aroma ? 10 : 9}>Open lines: {rupees.format(rep.totals.openLines)} · Distinct orders: {rupees.format(rep.totals.distinctOrders)} (all pages)</td>
           <td className={`${foot} text-right tabular-nums`}>{qty.format(rep.totals.orderedQuantity)}</td>
           <td className={`${foot} text-right tabular-nums`}>{qty.format(rep.totals.openQuantity)}</td>
           <td className={foot} />
           <td className={`${foot} text-right tabular-nums`}>{rupees.format(rep.totals.lineTotal)}</td>
           <td className={foot} />
-          <td className={foot} />
-          <td className={foot} />
         </tr>
       )}
-      footerCsv={(rep) => ['TOTAL', `Open lines ${rep.totals.openLines}`, `Distinct orders ${rep.totals.distinctOrders}`, '', '', '', '', '', rep.totals.orderedQuantity, rep.totals.openQuantity, '', rep.totals.lineTotal, '', '', '']}
+      footerCsv={(rep) => ['TOTAL', `Open lines ${rep.totals.openLines}`, `Distinct orders ${rep.totals.distinctOrders}`, '', '', '', '', '', '', '', rep.totals.orderedQuantity, rep.totals.openQuantity, '', rep.totals.lineTotal, '']}
     />
   );
 }
@@ -63,6 +61,7 @@ const poCols: Col<OpenPurchaseOrderLine>[] = [
   { key: 'date', header: 'Posting Date', render: (r) => formatDate(r.postingDate), csv: (r) => r.postingDate.slice(0, 10), nowrap: true },
   { key: 'v', header: 'Vendor', render: (r) => (<><div className="text-ink-primary">{r.vendorName ?? r.vendorCode}</div><div className="text-xs text-ink-tertiary">{r.vendorCode}</div></>), csv: (r) => `${r.vendorCode} - ${r.vendorName ?? ''}` },
   { key: 'ic', header: 'Item Code', render: (r) => dash(r.itemCode), csv: (r) => r.itemCode, nowrap: true },
+  { key: 'aroma', header: 'Aroma Code', render: (r) => dash(r.aromaCode), csv: (r) => r.aromaCode, nowrap: true },
   { key: 'id', header: 'Item Description', render: (r) => dash(r.itemDescription), csv: (r) => r.itemDescription },
   { key: 'whs', header: 'Warehouse', render: (r) => dash(r.warehouse ?? r.warehouseCode), csv: (r) => r.warehouse ?? r.warehouseCode },
   { key: 'due', header: 'Due Date', render: (r) => (r.dueDate ? formatDate(r.dueDate) : '—'), csv: (r) => r.dueDate?.slice(0, 10), nowrap: true },
@@ -83,16 +82,16 @@ export function OpenPurchaseOrderLinesSection() {
       filters={['warehouse', 'branch', 'customer', 'item']}
       rowKey={(r, i) => `${r.docEntry}-${r.itemCode}-${i}`}
       csvName="open-purchase-order-lines"
-      footer={(rep) => (
+      footer={(rep, ctx) => (
         <tr>
-          <td className={foot} colSpan={7}>Open lines: {rupees.format(rep.totals.openLines)} · Distinct orders: {rupees.format(rep.totals.distinctOrders)} (all pages)</td>
+          <td className={foot} colSpan={ctx.aroma ? 8 : 7}>Open lines: {rupees.format(rep.totals.openLines)} · Distinct orders: {rupees.format(rep.totals.distinctOrders)} (all pages)</td>
           <td className={`${foot} text-right tabular-nums`}>{qty.format(rep.totals.orderedQuantity)}</td>
           <td className={`${foot} text-right tabular-nums`}>{qty.format(rep.totals.openQuantity)}</td>
           <td className={foot} />
           <td className={`${foot} text-right tabular-nums`}>{rupees.format(rep.totals.lineTotal)}</td>
         </tr>
       )}
-      footerCsv={(rep) => ['TOTAL', `Open lines ${rep.totals.openLines}`, `Distinct orders ${rep.totals.distinctOrders}`, '', '', '', '', rep.totals.orderedQuantity, rep.totals.openQuantity, '', rep.totals.lineTotal]}
+      footerCsv={(rep) => ['TOTAL', `Open lines ${rep.totals.openLines}`, `Distinct orders ${rep.totals.distinctOrders}`, '', '', '', '', '', rep.totals.orderedQuantity, rep.totals.openQuantity, '', rep.totals.lineTotal]}
     />
   );
 }
@@ -106,6 +105,7 @@ const regCols: Col<SalesRegisterRow>[] = [
   { key: 'grp', header: 'Customer Group', render: (r) => dash(r.customerGroup), csv: (r) => r.customerGroup },
   { key: 'sp', header: 'Salesperson', render: (r) => dash(r.salesperson), csv: (r) => r.salesperson },
   { key: 'ic', header: 'Item Code', render: (r) => dash(r.itemCode), csv: (r) => r.itemCode, nowrap: true },
+  { key: 'aroma', header: 'Aroma Code', render: (r) => dash(r.aromaCode), csv: (r) => r.aromaCode, nowrap: true },
   { key: 'id', header: 'Item Description', render: (r) => dash(r.itemDescription), csv: (r) => r.itemDescription },
   { key: 'cat', header: 'Category', render: (r) => dash(r.productCategory), csv: (r) => r.productCategory },
   { key: 'unit', header: 'Unit', render: (r) => dash(r.unit), csv: (r) => r.unit, nowrap: true },
@@ -134,9 +134,9 @@ export function SalesRegisterSection() {
       filters={['docType', 'unit', 'warehouse', 'branch', 'salesperson', 'customerGroup', 'customer', 'category', 'item']}
       rowKey={(r, i) => `${r.docType}-${r.docEntry}-${r.itemCode}-${i}`}
       csvName="sales-register"
-      footer={(rep) => (
+      footer={(rep, ctx) => (
         <tr>
-          <td className={foot} colSpan={11}>Total · {rupees.format(rep.totals.lines)} lines (all pages)</td>
+          <td className={foot} colSpan={ctx.aroma ? 12 : 11}>Total · {rupees.format(rep.totals.lines)} lines (all pages)</td>
           <td className={`${foot} text-right tabular-nums`}>{qty.format(rep.totals.quantity)}</td>
           <td className={foot} />
           <td className={`${foot} text-right tabular-nums`}>{rupees.format(rep.totals.basicAmount)}</td>
@@ -146,7 +146,7 @@ export function SalesRegisterSection() {
           <td className={foot} colSpan={5} />
         </tr>
       )}
-      footerCsv={(rep) => ['TOTAL', `${rep.totals.lines} lines`, '', '', '', '', '', '', '', '', '', rep.totals.quantity, '', rep.totals.basicAmount, rep.totals.netSales, rep.totals.taxAmount, rep.totals.netSalesInclTax, '', '', '', '', '']}
+      footerCsv={(rep) => ['TOTAL', `${rep.totals.lines} lines`, '', '', '', '', '', '', '', '', '', '', rep.totals.quantity, '', rep.totals.basicAmount, rep.totals.netSales, rep.totals.taxAmount, rep.totals.netSalesInclTax, '', '', '', '', '']}
     />
   );
 }
@@ -234,7 +234,8 @@ export function SalesAnalysisSection({ by }: { by: keyof typeof ANALYSIS }) {
   const cfg = ANALYSIS[by];
   const cols: Col<SalesAnalysisRow>[] = [
     ...(by === 'item'
-      ? [{ key: 'code', header: 'Item Code', render: (r: SalesAnalysisRow) => r.key, csv: (r: SalesAnalysisRow) => r.key, nowrap: true } as Col<SalesAnalysisRow>]
+      ? [{ key: 'code', header: 'Item Code', render: (r: SalesAnalysisRow) => r.key, csv: (r: SalesAnalysisRow) => r.key, nowrap: true } as Col<SalesAnalysisRow>,
+         { key: 'aroma', header: 'Aroma Code', render: (r: SalesAnalysisRow) => dash(r.aromaCode), csv: (r: SalesAnalysisRow) => r.aromaCode, nowrap: true } as Col<SalesAnalysisRow>]
       : by === 'customer'
         ? [{ key: 'code', header: 'Code', render: (r: SalesAnalysisRow) => r.key, csv: (r: SalesAnalysisRow) => r.key, nowrap: true } as Col<SalesAnalysisRow>]
         : []),
@@ -258,9 +259,9 @@ export function SalesAnalysisSection({ by }: { by: keyof typeof ANALYSIS }) {
       showTaxBasis
       extra={{ by }}
       pageSize={by === 'month' ? 60 : 25}
-      footer={(rep) => (
+      footer={(rep, ctx) => (
         <tr>
-          <td className={foot} colSpan={Math.max(1, lead)}>Total · {rupees.format(rep.totals.rows)} rows (all pages)</td>
+          <td className={foot} colSpan={Math.max(1, ctx.aroma ? lead : lead - 1)}>Total · {rupees.format(rep.totals.rows)} rows (all pages)</td>
           <td className={`${foot} text-right tabular-nums`}>{rupees.format(rep.totals.invoices)}</td>
           <td className={`${foot} text-right tabular-nums`}>{qty.format(rep.totals.quantity)}</td>
           <td className={`${foot} text-right tabular-nums`}>{rupees.format(rep.totals.value)}</td>

@@ -1,3 +1,5 @@
+import { isNative } from '../../native/platform';
+import { shareFile } from '../../native/files';
 /** yyyy-MM-dd in local time (what <input type="date"> and the API expect). */
 export function toIsoDate(d: Date) {
   const m = String(d.getMonth() + 1).padStart(2, '0');
@@ -23,7 +25,10 @@ export function downloadCsv(filename: string, header: string[], rows: (string | 
     return /[",\n]/.test(s) ? `"${s.replace(/"/g, '""')}"` : s;
   };
   const csv = [...preamble, header, ...rows].map((r) => r.map(esc).join(',')).join('\r\n');
-  const url = URL.createObjectURL(new Blob(['﻿' + csv], { type: 'text/csv;charset=utf-8' }));
+  const blob = new Blob(['﻿' + csv], { type: 'text/csv;charset=utf-8' });
+  // In the installed app a blob can't be downloaded like in a browser: hand it to the system share sheet instead.
+  if (isNative) { void shareFile(filename, blob); return; }
+  const url = URL.createObjectURL(blob);
   const a = document.createElement('a');
   a.href = url;
   a.download = filename;

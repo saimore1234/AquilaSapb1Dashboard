@@ -74,11 +74,12 @@ function PeriodRow({ p }: { p: PeriodPerformance }) {
 
 export default function TargetManagement() {
   // The API enforces the Sales > Targets permissions, so this page uses the same ones (no separate role grant needed).
-  const { hasPermission } = useAuth();
-  const canCreate = hasPermission('Sales', 'targets', 'Create');
-  const canEdit = hasPermission('Sales', 'targets', 'Edit');
-  const canDelete = hasPermission('Sales', 'targets', 'Delete');
-  const canApprove = hasPermission('Sales', 'targets', 'Approve');
+  const { hasPermission, salesScope } = useAuth();
+  const readOnly = !!salesScope?.restricted; // salesperson logins only view their own targets
+  const canCreate = !readOnly && hasPermission('Sales', 'targets', 'Create');
+  const canEdit = !readOnly && hasPermission('Sales', 'targets', 'Edit');
+  const canDelete = !readOnly && hasPermission('Sales', 'targets', 'Delete');
+  const canApprove = !readOnly && hasPermission('Sales', 'targets', 'Approve');
   const { axisColor, gridColor, cur, prev, tooltipStyle } = useChartTheme();
 
   const [options, setOptions] = useState<SalesTargetOptions | null>(null);
@@ -196,7 +197,7 @@ export default function TargetManagement() {
             <label className="ctl-label" htmlFor="tm-slp">Salesperson</label>
             <select id="tm-slp" className={`${input} w-56`} value={salesperson} onChange={(e) => { setSalesperson(e.target.value); setPage(1); }}>
               <option value="">Select a salesperson…</option>
-              {(options?.salespersons ?? []).map((p) => <option key={p.code} value={p.code}>{p.name}{p.active ? '' : ' (inactive)'}</option>)}
+              {(options?.salespersons ?? []).filter((p) => p.active || String(p.code) === salesperson).map((p) => <option key={p.code} value={p.code}>{p.name}{p.active ? '' : ' (inactive)'}</option>)}
             </select>
           </div>
         )}

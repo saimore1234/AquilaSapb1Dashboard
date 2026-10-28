@@ -22,7 +22,7 @@ interface Props {
  * next 50 matches of the SAP Item Master (code or name; sales items by default, all items on request), and "Load more" pages through the rest, so it works for any
  * item-master size.
  */
-export default function ItemPicker({ value, onSelect, excludeCodes = [], placeholder = 'Search item code or name', className = '', onClear, ariaLabel }: Props) {
+export default function ItemPicker({ value, onSelect, excludeCodes = [], placeholder = 'Search item code, Aroma code or name', className = '', onClear, ariaLabel }: Props) {
   const [term, setTerm] = useState('');
   const [open, setOpen] = useState(false);
   const [loading, setLoading] = useState(false);
@@ -111,7 +111,7 @@ export default function ItemPicker({ value, onSelect, excludeCodes = [], placeho
                 <li key={it.code}>
                   <button type="button" className="w-full text-left px-3 py-2 text-sm hover:bg-surface-tertiary" onClick={() => { onSelect(it); setOpen(false); }}>
                     <span className="text-ink-primary font-medium">{it.code}</span> <span className="text-ink-secondary">{it.name}</span>
-                    <span className="block text-xs text-ink-tertiary">{[it.group, it.uom].filter(Boolean).join(' · ')}</span>
+                    <span className="block text-xs text-ink-tertiary">{[it.aromaCode ? `Aroma ${it.aromaCode}` : null, it.group, it.uom].filter(Boolean).join(' · ')}</span>
                   </button>
                 </li>
               ))}

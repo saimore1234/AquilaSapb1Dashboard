@@ -21,6 +21,7 @@ import { compactInr, formatDate, useChartTheme } from '../../components/sales/sa
 import TargetFormModal from '../../components/sales/TargetFormModal';
 import ItemPicker from '../../components/sales/ItemPicker';
 import { usePermissions } from '../../permissions/usePermissions';
+import { useAuth } from '../../context/AuthContext';
 
 /** Whole rupees with Indian grouping and no decimals (e.g. 42,20,17,421). */
 const rupees = new Intl.NumberFormat('en-IN', { maximumFractionDigits: 0 });
@@ -60,7 +61,13 @@ function Achievement({ pct }: { pct: number | null }) {
 }
 
 export default function SalespersonTargets() {
-  const { canCreate, canEdit, canDelete, canApprove } = usePermissions();
+  const perms = usePermissions();
+  const { salesScope } = useAuth();
+  const readOnly = !!salesScope?.restricted; // salesperson logins only view their own targets
+  const canCreate = perms.canCreate && !readOnly;
+  const canEdit = perms.canEdit && !readOnly;
+  const canDelete = perms.canDelete && !readOnly;
+  const canApprove = perms.canApprove && !readOnly;
   const { axisColor, gridColor, cur, prev, tooltipStyle } = useChartTheme();
 
   const [options, setOptions] = useState<SalesTargetOptions | null>(null);
@@ -238,7 +245,7 @@ export default function SalespersonTargets() {
           <label className="block text-xs text-ink-secondary mb-1" htmlFor="tg-sp">Salesperson</label>
           <select id="tg-sp" className={input} value={salesperson} onChange={(e) => reset(setSalesperson)(e.target.value)}>
             <option value="">All salespersons</option>
-            {options?.salespersons.map((s) => <option key={s.code} value={s.code}>{s.name}{s.active ? '' : ' (inactive)'}</option>)}
+            {options?.salespersons.filter((s) => s.active || String(s.code) === salesperson).map((s) => <option key={s.code} value={s.code}>{s.name}{s.active ? '' : ' (inactive)'}</option>)}
           </select>
         </div>
         <div>

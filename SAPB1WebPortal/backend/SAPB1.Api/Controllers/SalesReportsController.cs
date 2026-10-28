@@ -89,6 +89,7 @@ public class SalesReportsController : ControllerBase
         => CheckDetail<OpenSalesOrderReportDto>(query) ?? Ok(ApiResponse<OpenSalesOrderReportDto>.Ok(await _detail.GetOpenSalesOrderLinesAsync(query, ct)));
 
     [HttpGet("open-purchase-order-lines")]
+    [BlockRestricted]
     public async Task<ActionResult<ApiResponse<OpenPurchaseOrderReportDto>>> GetOpenPurchaseOrderLines([FromQuery] DetailReportQuery query, CancellationToken ct)
         => CheckDetail<OpenPurchaseOrderReportDto>(query) ?? Ok(ApiResponse<OpenPurchaseOrderReportDto>.Ok(await _detail.GetOpenPurchaseOrderLinesAsync(query, ct)));
 

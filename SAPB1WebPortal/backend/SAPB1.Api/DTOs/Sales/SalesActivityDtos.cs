@@ -21,6 +21,8 @@ public class SalesActivityDto
 {
     public DateTime DateFrom { get; set; }
     public DateTime DateTo { get; set; }
+    /// <summary>The date "this month / this year" run up to: the To Date, or today when the To Date is in the future.</summary>
+    public DateTime AsOf { get; set; }
     public DateTime MonthFrom { get; set; }
     public DateTime YearFrom { get; set; }
     public int TotalQuotations { get; set; }

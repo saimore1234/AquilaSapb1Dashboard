@@ -6,8 +6,8 @@ import ResponsiveTable, { type ColumnDef } from '../../components/ui/ResponsiveT
 import Modal from '../../components/ui/Modal';
 import { usePermissions } from '../../permissions/usePermissions';
 import { useToast } from '../../context/ToastContext';
-import { getUsers, getRoles, createUser, updateUser, resetUserPassword, deleteUser } from '../../api/admin';
-import type { AdminUser, AdminRole } from '../../types';
+import { getUsers, getRoles, createUser, updateUser, resetUserPassword, deleteUser, getSalespersonLinks, setUserSalespersons } from '../../api/admin';
+import type { AdminUser, AdminRole, UserSalespersonLinks } from '../../types';
 
 function formatDate(value: string | null) {
   if (!value) return '—';
@@ -20,6 +20,7 @@ export default function AdminUsersPage() {
   const toast = useToast();
   const [users, setUsers] = useState<AdminUser[]>([]);
   const [roles, setRoles] = useState<AdminRole[]>([]);
+  const [links, setLinks] = useState<UserSalespersonLinks | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
 
@@ -31,10 +32,11 @@ export default function AdminUsersPage() {
   function load() {
     setLoading(true);
     setError(null);
-    Promise.all([getUsers(), getRoles()])
-      .then(([u, r]) => {
+    Promise.all([getUsers(), getRoles(), getSalespersonLinks().catch(() => null)])
+      .then(([u, r, l]) => {
         setUsers(u);
         setRoles(r);
+        setLinks(l);
       })
       .catch((err) => setError(err?.response?.data?.message || err.message))
       .finally(() => setLoading(false));
@@ -47,6 +49,15 @@ export default function AdminUsersPage() {
     { key: 'username', header: 'Username', render: (u) => <span className="font-medium text-ink-primary">{u.username}</span> },
     { key: 'displayName', header: 'Display Name', render: (u) => u.displayName },
     { key: 'roleName', header: 'Role', render: (u) => u.roleName || '—' },
+    {
+      key: 'salesperson',
+      header: 'SAP Salesperson',
+      render: (u) => {
+        const codes = links?.links[String(u.id)] ?? [];
+        if (codes.length === 0) return u.roleName === 'Sales' ? <span className="badge-warning" title="This login sees no data until it is linked to a salesperson">Not linked</span> : '—';
+        return <span className="text-ink-primary">{codes.map((c) => links?.salespersons.find((p) => p.code === c)?.name ?? String(c)).join(', ')}</span>;
+      }
+    },
     {
       key: 'isActive',
       header: 'Status',
@@ -133,6 +144,7 @@ export default function AdminUsersPage() {
         <EditUserModal
           user={editUser}
           roles={roles}
+          links={links}
           onClose={() => setEditUser(null)}
           onSaved={() => {
             setEditUser(null);
@@ -251,11 +263,13 @@ function AddUserModal({ roles, onClose, onCreated }: { roles: AdminRole[]; onClo
 function EditUserModal({
   user,
   roles,
+  links,
   onClose,
   onSaved
 }: {
   user: AdminUser;
   roles: AdminRole[];
+  links: UserSalespersonLinks | null;
   onClose: () => void;
   onSaved: () => void;
 }) {
@@ -264,6 +278,9 @@ function EditUserModal({
   const [roleId, setRoleId] = useState(roles.find((r) => r.name === user.roleName)?.id ?? roles[0]?.id ?? 0);
   const [error, setError] = useState<string | null>(null);
   const [submitting, setSubmitting] = useState(false);
+  const [slps, setSlps] = useState<number[]>(links?.links[String(user.id)] ?? []);
+  const [slpSearch, setSlpSearch] = useState('');
+  const shownSlps = (links?.salespersons ?? []).filter((p) => !slpSearch.trim() || p.name.toLowerCase().includes(slpSearch.trim().toLowerCase()));
 
   return (
     <Modal open onClose={onClose} variant="sheet">
@@ -275,6 +292,7 @@ function EditUserModal({
           setError(null);
           try {
             await updateUser(user.id, { displayName, isActive, roleId });
+            if (links) await setUserSalespersons(user.id, slps);
             onSaved();
           } catch (err: any) {
             setError(err?.response?.data?.message || err.message);
@@ -299,6 +317,26 @@ function EditUserModal({
             ))}
           </select>
         </div>
+        {links && (
+          <div>
+            <label className="block text-sm font-medium text-ink-secondary mb-1.5">SAP salesperson(s) this login may see</label>
+            <p className="text-xs text-ink-tertiary mb-1.5">
+              A login with the <strong>Sales</strong> role (or any login linked here) only sees these salespersons' customers, orders, invoices and targets. Leave empty for a login that should see everything
+              (not for the Sales role: an unlinked Sales login sees nothing).
+            </p>
+            <input className="input-field mb-1.5" placeholder="Search salespersons…" value={slpSearch} onChange={(e) => setSlpSearch(e.target.value)} />
+            <div className="max-h-44 overflow-y-auto rounded-lg border border-border divide-y divide-border">
+              {shownSlps.map((p) => (
+                <label key={p.code} className="flex items-center gap-2 px-3 py-1.5 text-sm cursor-pointer hover:bg-surface-tertiary">
+                  <input type="checkbox" className="h-4 w-4" checked={slps.includes(p.code)} onChange={(e) => setSlps((cur) => (e.target.checked ? [...cur, p.code] : cur.filter((c) => c !== p.code)))} />
+                  <span className="text-ink-primary">{p.name}</span><span className="text-xs text-ink-tertiary ml-auto">#{p.code}</span>
+                </label>
+              ))}
+              {shownSlps.length === 0 && <p className="px-3 py-2 text-sm text-ink-tertiary">No match.</p>}
+            </div>
+            <p className="text-xs text-ink-tertiary mt-1">{slps.length} selected</p>
+          </div>
+        )}
         <label className="flex items-center gap-2 text-sm text-ink-secondary cursor-pointer select-none">
           <input type="checkbox" checked={isActive} onChange={(e) => setIsActive(e.target.checked)} className="h-4 w-4 rounded border-border-strong text-brand-600" />
           Active (unchecked disables this account — they will not be able to log in)

@@ -21,12 +21,16 @@ public partial class SqlSalesPerformanceService
         var from = (q.DateFrom ?? FyStart(today)).Date;
         var to = (q.DateTo ?? today).Date;
         var cat = ProductCategories.Canonical(q.ProductCategory);
-        var monthFrom = new DateTime(to.Year, to.Month, 1);
-        var yearFrom = FyStart(to);
+        // "This month / this year" are measured up to the To Date, but never beyond today: when the selection runs into the future (e.g. a whole
+        // financial year) the month that is actually running now is used, so the tiles don't show an empty future month.
+        var asOf = to > today ? today : to;
+        if (asOf < from) asOf = to;
+        var monthFrom = new DateTime(asOf.Year, asOf.Month, 1);
+        var yearFrom = FyStart(asOf);
 
         var p = new DynamicParameters();
         p.Add("From", from); p.Add("To", to); p.Add("Unit", q.Unit); p.Add("Slp", q.Salesperson); p.Add("Group", q.CustomerGroup); p.Add("Cat", cat);
-        p.Add("MonthFrom", monthFrom); p.Add("YearFrom", yearFrom); p.Add("Today", today);
+        p.Add("MonthFrom", monthFrom); p.Add("YearFrom", yearFrom); p.Add("AsOf", asOf); p.Add("Today", today);
 
         using var db = _sap.CreateConnection();
         var d = DocDims("QUT1"); var o = DocDims("RDR1"); var dl = DocDims("DLN1"); var iv = DocDims("INV1");
@@ -37,10 +41,10 @@ public partial class SqlSalesPerformanceService
               (SELECT COUNT(*) FROM ORDR h WHERE h.CANCELED = 'N' AND {InPeriod} {o}) AS TotalSalesOrders,
               (SELECT COUNT(*) FROM ORDR h WHERE h.CANCELED = 'N' AND h.DocStatus = 'O' {o}) AS OpenSalesOrders,
               (SELECT ISNULL(SUM(h.DocTotal), 0) FROM ORDR h WHERE h.CANCELED = 'N' AND h.DocStatus = 'O' {o}) AS OpenSalesOrderValue,
-              (SELECT COUNT(*) FROM ORDR h WHERE h.CANCELED = 'N' AND h.DocDate >= @MonthFrom AND h.DocDate < DATEADD(DAY, 1, @To) {o}) AS SalesOrdersThisMonth,
-              (SELECT COUNT(*) FROM ORDR h WHERE h.CANCELED = 'N' AND h.DocDate >= @YearFrom AND h.DocDate < DATEADD(DAY, 1, @To) {o}) AS SalesOrdersThisYear,
+              (SELECT COUNT(*) FROM ORDR h WHERE h.CANCELED = 'N' AND h.DocDate >= @MonthFrom AND h.DocDate < DATEADD(DAY, 1, @AsOf) {o}) AS SalesOrdersThisMonth,
+              (SELECT COUNT(*) FROM ORDR h WHERE h.CANCELED = 'N' AND h.DocDate >= @YearFrom AND h.DocDate < DATEADD(DAY, 1, @AsOf) {o}) AS SalesOrdersThisYear,
               (SELECT COUNT(*) FROM ODLN h WHERE h.CANCELED = 'N' AND {InPeriod} {dl}) AS TotalDeliveries,
-              (SELECT COUNT(*) FROM ODLN h WHERE h.CANCELED = 'N' AND h.DocStatus = 'O' {dl}) AS PendingDeliveries,
+              (SELECT COUNT(*) FROM ODLN h WHERE h.CANCELED = 'N' AND h.DocStatus = 'O' AND {DeliveryRules.ExcludeIntercompany("h")} {dl}) AS PendingDeliveries,
               (SELECT COUNT(*) FROM OINV h WHERE h.CANCELED = 'N' AND {InPeriod} {iv}) AS TotalArInvoices,
               (SELECT COUNT(*) FROM OINV h WHERE h.CANCELED = 'N' AND h.DocStatus = 'O' {iv}) AS OpenArInvoices,
               (SELECT COUNT(*) FROM OINV h WHERE h.CANCELED = 'N' AND h.DocStatus = 'O' AND h.DocDueDate < @Today {iv}) AS OverdueArInvoices,
@@ -68,7 +72,7 @@ public partial class SqlSalesPerformanceService
         }
         else counts.OutstandingReceivables = null;
 
-        counts.DateFrom = from; counts.DateTo = to; counts.MonthFrom = monthFrom; counts.YearFrom = yearFrom;
+        counts.DateFrom = from; counts.DateTo = to; counts.MonthFrom = monthFrom; counts.YearFrom = yearFrom; counts.AsOf = asOf;
 
         // Sales values use the same turnover rule as the headline (net of credit notes when on; default-excluded locations out for All units).
         var locs = (await db.QueryAsync<LocRow>(new CommandDefinition("SELECT Code, Location AS Name FROM OLCT", cancellationToken: ct))).ToList();
@@ -79,8 +83,8 @@ public partial class SqlSalesPerformanceService
             var rows = await ActualByLocAsync(db, f, t, q.IncludeTax, q.NetOfCreditNotes, q.CustomerGroup, q.Salesperson, cat, ct);
             return q.Unit is int u ? rows.Where(r => r.LocCode == u).Sum(r => r.Amt) : rows.Where(r => r.LocCode is null || !excluded.Contains(r.LocCode.Value)).Sum(r => r.Amt);
         }
-        counts.MonthlySalesValue = await TurnoverAsync(monthFrom, to);
-        counts.YearlySalesValue = await TurnoverAsync(yearFrom, to);
+        counts.MonthlySalesValue = await TurnoverAsync(monthFrom, asOf);
+        counts.YearlySalesValue = await TurnoverAsync(yearFrom, asOf);
 
         // Receipts carry no unit, salesperson or item: only a customer-group selection can be honoured.
         if (q.Unit is not null || q.Salesperson is not null || cat is not null)
@@ -92,7 +96,7 @@ public partial class SqlSalesPerformanceService
         {
             counts.IncomingPaymentsThisMonth = await db.ExecuteScalarAsync<decimal>(new CommandDefinition(@"
                 SELECT ISNULL(SUM(r.DocTotal), 0) FROM ORCT r
-                WHERE r.Canceled = 'N' AND r.DocDate >= @MonthFrom AND r.DocDate < DATEADD(DAY, 1, @To)
+                WHERE r.Canceled = 'N' AND r.DocDate >= @MonthFrom AND r.DocDate < DATEADD(DAY, 1, @AsOf)
                   AND (@Group IS NULL OR EXISTS (SELECT 1 FROM OCRD c WHERE c.CardCode = r.CardCode AND c.GroupCode = @Group))", p, cancellationToken: ct));
         }
         return counts;

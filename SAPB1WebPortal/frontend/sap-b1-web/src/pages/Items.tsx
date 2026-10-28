@@ -11,6 +11,7 @@ import { TableSkeleton } from '../components/ui/Skeleton';
 import ResponsiveTable, { type ColumnDef } from '../components/ui/ResponsiveTable';
 import { useToast } from '../context/ToastContext';
 import { usePermissions } from '../permissions/usePermissions';
+import AromaToggle, { useShowAroma } from '../components/sales/AromaToggle';
 
 export default function Items() {
   const { canExport } = usePermissions();
@@ -65,7 +66,8 @@ export default function Items() {
     show({ variant: 'success', title: 'Export ready', description: `${result.items.length} items exported (current page).` });
   }
 
-  const columns: ColumnDef<ItemListItem>[] = [
+  const showAroma = useShowAroma();
+  const allColumns: ColumnDef<ItemListItem>[] = [
     {
       key: 'name',
       header: 'Item',
@@ -81,12 +83,14 @@ export default function Items() {
         </div>
       )
     },
+    { key: 'aroma', header: 'Aroma Code', render: (i) => i.aromaCode || '—', className: 'hidden md:table-cell text-ink-secondary' },
     { key: 'group', header: 'Group', render: (i) => i.itemGroup || '—', className: 'hidden md:table-cell text-ink-secondary' },
     { key: 'uom', header: 'UoM', render: (i) => i.inventoryUom || '—', className: 'hidden lg:table-cell text-ink-secondary' },
     { key: 'onHand', header: 'On Hand', align: 'right', render: (i) => <span className="tabular-nums">{i.onHand.toLocaleString()}</span> },
     { key: 'available', header: 'Available', align: 'right', render: (i) => <span className="tabular-nums">{i.available.toLocaleString()}</span> },
     { key: 'status', header: 'Status', render: (i) => <StatusBadge active={i.active} /> }
   ];
+  const columns = showAroma ? allColumns : allColumns.filter((c) => c.key !== 'aroma');
 
   return (
     <div className="space-y-4">
@@ -96,7 +100,8 @@ export default function Items() {
           {result && <p className="text-sm text-ink-secondary mt-0.5">{result.totalCount.toLocaleString()} total items</p>}
         </div>
         <div className="flex gap-2 flex-wrap">
-          <SearchBar value={search} onChange={setSearch} placeholder="Item code, name, barcode…" />
+          <SearchBar value={search} onChange={setSearch} placeholder="Item code, name, Aroma code, barcode…" />
+          <AromaToggle className="self-center" />
           {canExport && (
             <button className="btn-secondary" onClick={exportCsv} disabled={!result || result.items.length === 0}>
               <Download className="h-4 w-4" />

@@ -63,6 +63,10 @@ public class OpenSalesOrderRowDto
     /// <summary>Not Dispatched / Part Dispatched / Dispatched (derived from open vs ordered qty).</summary>
     public string DeliveryStatus { get; set; } = string.Empty;
     public decimal Total { get; set; }
+    /// <summary>ETA from production as entered on the order lines (free text); distinct values joined with "; ".</summary>
+    public string? EtaProduction { get; set; }
+    /// <summary>Days from the order date to today.</summary>
+    public int DaysOpen { get; set; }
 }
 
 public class OpenSalesOrdersDto

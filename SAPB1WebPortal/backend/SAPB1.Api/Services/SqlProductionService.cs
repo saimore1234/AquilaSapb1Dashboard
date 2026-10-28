@@ -126,9 +126,10 @@ public class SqlProductionService : IProductionService
     public async Task<PagedResult<BomDto>> GetBomsAsync(BomQuery query, CancellationToken ct = default)
     {
         using var db = _connectionFactory.CreateConnection();
+        var aroma = await ItemUdf.HasAromaAsync(db, ct);
 
-        const string whereSql = @"
-            WHERE (@Search IS NULL OR t.Code LIKE @SearchLike OR i.ItemName LIKE @SearchLike)
+        var whereSql = @"
+            WHERE (@Search IS NULL OR t.Code LIKE @SearchLike OR i.ItemName LIKE @SearchLike" + ItemUdf.AromaOr(aroma, "t.Code") + @")
               AND (@Type IS NULL
                    OR (@Type = 'Sales' AND t.TreeType = 'S')
                    OR (@Type = 'Production' AND (t.TreeType <> 'S' OR t.TreeType IS NULL)))";
@@ -192,7 +193,7 @@ public class SqlProductionService : IProductionService
     // ---------------------------------------------------------------
     // PRODUCTION ORDERS (OWOR / WOR1)
     // ---------------------------------------------------------------
-    private static (string WhereSql, DynamicParameters Parameters) BuildOrderFilters(ProductionOrderQuery query, string alias = "c", string? itemNameAlias = "i")
+    private static (string WhereSql, DynamicParameters Parameters) BuildOrderFilters(ProductionOrderQuery query, string alias = "c", string? itemNameAlias = "i", bool aroma = false)
     {
         var statusCode = query.Status?.Trim().ToLowerInvariant() switch
         {
@@ -205,7 +206,7 @@ public class SqlProductionService : IProductionService
 
         var sql = $@"
             WHERE (@Search IS NULL OR CAST({alias}.DocNum AS NVARCHAR(20)) LIKE @SearchLike
-                   OR {alias}.ItemCode LIKE @SearchLike{(itemNameAlias is null ? "" : $" OR {itemNameAlias}.ItemName LIKE @SearchLike")})
+                   OR {alias}.ItemCode LIKE @SearchLike{(itemNameAlias is null ? "" : $" OR {itemNameAlias}.ItemName LIKE @SearchLike")}{ItemUdf.AromaOr(aroma, alias + ".ItemCode")})
               AND (@DateFrom IS NULL OR {alias}.PostDate >= @DateFrom)
               AND (@DateTo IS NULL OR {alias}.PostDate <= @DateTo)
               AND (@Status IS NULL OR {alias}.Status = @Status)
@@ -228,7 +229,7 @@ public class SqlProductionService : IProductionService
     public async Task<PagedResult<ProductionOrderDto>> GetOrdersAsync(ProductionOrderQuery query, CancellationToken ct = default)
     {
         using var db = _connectionFactory.CreateConnection();
-        var (whereSql, p) = BuildOrderFilters(query);
+        var (whereSql, p) = BuildOrderFilters(query, aroma: await ItemUdf.HasAromaAsync(db, ct));
 
         var countSql = $"SELECT COUNT(*) FROM OWOR c LEFT JOIN OITM i ON i.ItemCode = c.ItemCode {whereSql}";
         var total = await db.ExecuteScalarAsync<int>(new CommandDefinition(countSql, p, cancellationToken: ct));
@@ -330,7 +331,7 @@ public class SqlProductionService : IProductionService
     // alias "l") to OWOR (production order header, alias "c") and let @Search/@Item
     // match either the finished good or the component, unlike BuildOrderFilters
     // above which only ever matches a single ItemCode column.
-    private static (string WhereSql, DynamicParameters Parameters) BuildComponentFilters(ProductionOrderQuery query, bool openOrdersOnly)
+    private static (string WhereSql, DynamicParameters Parameters) BuildComponentFilters(ProductionOrderQuery query, bool openOrdersOnly, bool aroma = false)
     {
         var statusCode = query.Status?.Trim().ToLowerInvariant() switch
         {
@@ -343,7 +344,7 @@ public class SqlProductionService : IProductionService
 
         var sql = @"
             WHERE (@Search IS NULL OR CAST(c.DocNum AS NVARCHAR(20)) LIKE @SearchLike
-                   OR c.ItemCode LIKE @SearchLike OR l.ItemCode LIKE @SearchLike)
+                   OR c.ItemCode LIKE @SearchLike OR l.ItemCode LIKE @SearchLike" + ItemUdf.AromaOr(aroma, "c.ItemCode") + ItemUdf.AromaOr(aroma, "l.ItemCode") + @")
               AND (@DateFrom IS NULL OR c.PostDate >= @DateFrom)
               AND (@DateTo IS NULL OR c.PostDate <= @DateTo)
               AND (@Status IS NULL OR c.Status = @Status)
@@ -375,7 +376,7 @@ public class SqlProductionService : IProductionService
     {
         using var db = _connectionFactory.CreateConnection();
 
-        var (whereSql, p) = BuildComponentFilters(query, openOrdersOnly: true);
+        var (whereSql, p) = BuildComponentFilters(query, openOrdersOnly: true, aroma: await ItemUdf.HasAromaAsync(db, ct));
 
         var countSql = $"SELECT COUNT(*) FROM WOR1 l INNER JOIN OWOR c ON c.DocEntry = l.DocEntry {whereSql}";
         var total = await db.ExecuteScalarAsync<int>(new CommandDefinition(countSql, p, cancellationToken: ct));
@@ -422,7 +423,7 @@ public class SqlProductionService : IProductionService
     {
         using var db = _connectionFactory.CreateConnection();
 
-        var (whereSql, p) = BuildComponentFilters(query, openOrdersOnly: false);
+        var (whereSql, p) = BuildComponentFilters(query, openOrdersOnly: false, aroma: await ItemUdf.HasAromaAsync(db, ct));
 
         var countSql = $"SELECT COUNT(*) FROM WOR1 l INNER JOIN OWOR c ON c.DocEntry = l.DocEntry {whereSql}";
         var total = await db.ExecuteScalarAsync<int>(new CommandDefinition(countSql, p, cancellationToken: ct));
@@ -462,10 +463,11 @@ public class SqlProductionService : IProductionService
     public async Task<PagedResult<ProductionReceiptDto>> GetReceiptsAsync(ProductionOrderQuery query, CancellationToken ct = default)
     {
         using var db = _connectionFactory.CreateConnection();
+        var aroma = await ItemUdf.HasAromaAsync(db, ct);
 
-        const string filterSql = @"
+        var filterSql = @"
             WHERE n.AppObjType = @ObjType AND n.InQty > 0
-              AND (@Search IS NULL OR CAST(n.TransNum AS NVARCHAR(20)) LIKE @SearchLike OR n.ItemCode LIKE @SearchLike OR i.ItemName LIKE @SearchLike)
+              AND (@Search IS NULL OR CAST(n.TransNum AS NVARCHAR(20)) LIKE @SearchLike OR n.ItemCode LIKE @SearchLike OR i.ItemName LIKE @SearchLike" + ItemUdf.AromaOr(aroma, "n.ItemCode") + @")
               AND (@DateFrom IS NULL OR n.DocDate >= @DateFrom)
               AND (@DateTo IS NULL OR n.DocDate <= @DateTo)
               AND (@Item IS NULL OR n.ItemCode = @Item)

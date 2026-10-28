@@ -60,6 +60,8 @@ public class SalesPerformanceDto
     public int TargetCount { get; set; }
     /// <summary>Approved targets that only partly overlap the selected dates and therefore are NOT in Target.</summary>
     public int PartialTargetsExcluded { get; set; }
+    /// <summary>Targets whose period is longer than the selected dates, counted pro rata by day (selected days ÷ target period days).</summary>
+    public int ProRatedTargets { get; set; }
     /// <summary>Plain-language statement of exactly which targets are compared with the actual.</summary>
     public string TargetBasis { get; set; } = string.Empty;
 

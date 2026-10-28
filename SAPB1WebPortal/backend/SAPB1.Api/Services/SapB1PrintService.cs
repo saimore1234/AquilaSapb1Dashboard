@@ -75,17 +75,37 @@ public class SapB1PrintService : ISapB1PrintService
     private readonly ICompanyContext _company;
     private readonly IConfiguration _config;
     private readonly ILogger<SapB1PrintService> _logger;
+    private readonly ISalesScope _scope;
 
-    public SapB1PrintService(ICompanyConnectionFactory connections, ICompanyContext company, IConfiguration config, ILogger<SapB1PrintService> logger)
+    public SapB1PrintService(ICompanyConnectionFactory connections, ICompanyContext company, IConfiguration config, ILogger<SapB1PrintService> logger, ISalesScope scope)
     {
         _connections = connections;
         _company = company;
         _config = config;
         _logger = logger;
+        _scope = scope;
     }
 
     private sealed record HeaderRow(string? DocType, int DocNum, DateTime? UpdateDate, int? UpdateTS);
     private sealed record TemplateRow(string DocName, byte[] Template);
+
+    /// <summary>
+    /// A salesperson (restricted) login may only print documents that belong to its salespersons, and never purchase / other-module documents.
+    /// A document that is not theirs is reported as "not found", exactly like a document that does not exist. Unrestricted logins are unaffected.
+    /// </summary>
+    private async Task<bool> MayAccessAsync(SqlConnection conn, DocMap map, int docEntry, CancellationToken ct)
+    {
+        var scope = _scope.Current;
+        if (!scope.Restricted) return true;
+        if (scope.Denied) return false;
+        // Only sales documents carry a salesperson the login can be matched against.
+        var salesHeaders = new[] { "OQUT", "ORDR", "ODLN", "OINV", "ORIN" };
+        if (!salesHeaders.Contains(map.Table, StringComparer.OrdinalIgnoreCase)) return false;
+        var hit = await conn.ExecuteScalarAsync<int>(new CommandDefinition(
+            $"SELECT COUNT(*) FROM {map.Table} WHERE DocEntry = @DocEntry AND SlpCode IN @Slps",
+            new { DocEntry = docEntry, Slps = scope.SlpCodes }, cancellationToken: ct));
+        return hit > 0;
+    }
 
     private async Task<(HeaderRow? Header, string LayoutType)> ReadHeaderAsync(SqlConnection conn, DocMap map, int docEntry, CancellationToken ct)
     {
@@ -121,8 +141,9 @@ public class SapB1PrintService : ISapB1PrintService
         if (!Map.TryGetValue(documentType, out var map))
             return new PrintLayoutsResult { Failure = PrintFailure.UnknownDocumentType };
 
-        using var conn = (SqlConnection)_connections.CreateConnection();
+        using var conn = (SqlConnection)_connections.CreateUnscopedConnection();
         await conn.OpenAsync(ct);
+        if (!await MayAccessAsync(conn, map, docEntry, ct)) return new PrintLayoutsResult { Failure = PrintFailure.DocumentNotFound };
         var (header, layoutType) = await ReadHeaderAsync(conn, map, docEntry, ct);
         if (header is null) return new PrintLayoutsResult { Failure = PrintFailure.DocumentNotFound };
 
@@ -142,9 +163,12 @@ public class SapB1PrintService : ISapB1PrintService
 
         // The connection comes from the JWT company (ICompanyConnectionFactory). Read its string BEFORE
         // opening: SqlClient strips the password from ConnectionString once the connection is open.
-        using var conn = (SqlConnection)_connections.CreateConnection();
+        using var conn = (SqlConnection)_connections.CreateUnscopedConnection();
         var connectionString = conn.ConnectionString;
         await conn.OpenAsync(ct);
+
+        if (!await MayAccessAsync(conn, map, docEntry, ct))
+            return Fail(PrintFailure.DocumentNotFound, documentType, docEntry);
 
         var (header, layoutType) = await ReadHeaderAsync(conn, map, docEntry, ct);
         if (header is null)

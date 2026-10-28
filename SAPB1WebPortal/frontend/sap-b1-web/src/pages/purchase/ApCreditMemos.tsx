@@ -38,7 +38,7 @@ export default function ApCreditMemos() {
       keyField={(r) => String(r.docEntry)}
       docEntryField={(r) => r.docEntry}
       routeBase="/purchase/credit-memos"
-      searchPlaceholder="Credit memo #, vendor…"
+      searchPlaceholder="Credit memo #, vendor, item or Aroma code…"
       filterFields={['date', 'vendor', 'status']}
       emptyMessage="No A/P credit memos found."
       renderMobileCard={(r) => (

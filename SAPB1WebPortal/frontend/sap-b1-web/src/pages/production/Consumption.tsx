@@ -68,7 +68,7 @@ export default function Consumption() {
       })}
       columns={columns}
       keyField={(r, i) => `${r.productionOrderDocEntry}-${r.componentItemCode}-${i}`}
-      searchPlaceholder="Production order #, finished good, component…"
+      searchPlaceholder="Production order #, finished good, component, Aroma code…"
       filterFields={['date', 'status', 'item', 'warehouse']}
       emptyMessage="No consumption records found."
       renderMobileCard={(r) => (

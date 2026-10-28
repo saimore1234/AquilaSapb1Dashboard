@@ -113,13 +113,14 @@ export default function OutstandingSection({ reportTo }: { reportTo?: string }) 
                   <th className="px-3 py-2.5 font-medium text-right">61–90</th>
                   <th className="px-3 py-2.5 font-medium text-right">90+</th>
                   <th className="px-3 py-2.5 font-medium text-right">Total</th>
+                  <th className="px-3 py-2.5 font-medium text-right" title="Days from the due date of the customer's oldest unpaid invoice to today (negative = not yet due)">Overdue days</th>
                   <th className="px-4 py-2.5 font-medium">Risk</th>
                 </tr>
               </thead>
               <tbody>
                 {loading || !data
                   ? Array.from({ length: 6 }).map((_, i) => (
-                      <tr key={i} className="border-b border-border last:border-0"><td colSpan={7} className="px-4 py-3"><Skeleton className="h-4 w-full" /></td></tr>
+                      <tr key={i} className="border-b border-border last:border-0"><td colSpan={8} className="px-4 py-3"><Skeleton className="h-4 w-full" /></td></tr>
                     ))
                   : data.customers.map((c) => (
                       <tr key={c.customerCode} className="border-b border-border last:border-0 hover:bg-surface-tertiary/60">
@@ -134,18 +135,19 @@ export default function OutstandingSection({ reportTo }: { reportTo?: string }) 
                         <td className="px-3 py-2 text-right tabular-nums text-warning">{cell(c.days61To90)}</td>
                         <td className="px-3 py-2 text-right tabular-nums text-danger">{cell(c.days90Plus)}</td>
                         <td className="px-3 py-2 text-right tabular-nums font-medium">{compactInr(c.total)}</td>
+                        <td className={`px-3 py-2 text-right tabular-nums ${c.overdueDays !== null && c.overdueDays > 0 ? 'text-danger' : ''}`}>{c.overdueDays === null || c.overdueDays === undefined ? '—' : c.overdueDays}</td>
                         <td className="px-4 py-2"><StatusPill text={c.risk} /></td>
                       </tr>
                     ))}
                 {!loading && data?.customers.length === 0 && (
-                  <tr><td colSpan={7} className="px-4 py-10 text-center text-ink-tertiary">No outstanding invoices.</td></tr>
+                  <tr><td colSpan={8} className="px-4 py-10 text-center text-ink-tertiary">No outstanding invoices.</td></tr>
                 )}
               </tbody>
             </table>
           </div>
         </div>
       </div>
-      <p className="text-xs text-ink-tertiary">Risk is High when 25% or more of a customer's balance is older than {data?.creditTermsDays ?? 60} days, Watch when any is, otherwise Low.</p>
+      <p className="text-xs text-ink-tertiary">Overdue days = today minus the due date of the customer's oldest unpaid invoice (negative = not yet due). Risk is High when 25% or more of a customer's balance is older than {data?.creditTermsDays ?? 60} days, Watch when any is, otherwise Low.</p>
     </section>
   );
 }

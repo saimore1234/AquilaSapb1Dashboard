@@ -57,11 +57,13 @@ public class SqlSalesService : ISalesService
 {
     private readonly ICompanyConnectionFactory _connectionFactory;
     private readonly ILogger<SqlSalesService> _logger;
+    private readonly ISalesScope _scope;
 
-    public SqlSalesService(ICompanyConnectionFactory connectionFactory, ILogger<SqlSalesService> logger)
+    public SqlSalesService(ICompanyConnectionFactory connectionFactory, ILogger<SqlSalesService> logger, ISalesScope scope)
     {
         _connectionFactory = connectionFactory;
         _logger = logger;
+        _scope = scope;
     }
 
     private static readonly Dictionary<int, (string Label, string Route, string HeaderTable, string LineTable)> DocTypeMap = new()
@@ -86,7 +88,7 @@ public class SqlSalesService : ISalesService
     // bound through Dapper parameters, never string-concatenated.
     // ---------------------------------------------------------------
     private static (string WhereSql, DynamicParameters Parameters) BuildFilters(
-        SalesDocumentQuery query, bool includeSalesEmployee, bool includeWarehouseExists, string? lineTableForWarehouse)
+        SalesDocumentQuery query, bool includeSalesEmployee, bool includeWarehouseExists, string? lineTableForWarehouse, string? aroma = null)
     {
         var statusCode = query.Status?.Trim().ToLowerInvariant() switch
         {
@@ -95,9 +97,13 @@ public class SqlSalesService : ISalesService
             _ => (string?)null
         };
 
-        var sql = @"
+        // The search also matches ANY line's item (code, name or Aroma Code) through the item master — fast, because the item master is small (aroma = null when the company has no such field).
+        var itemSearch = lineTableForWarehouse is null ? "" :
+            $" OR EXISTS (SELECT 1 FROM {lineTableForWarehouse} sl WHERE sl.DocEntry = c.DocEntry AND sl.ItemCode IN (SELECT si.ItemCode FROM OITM si WHERE si.ItemCode LIKE @SearchLike OR si.ItemName LIKE @SearchLike{(aroma is null ? "" : $" OR {aroma} LIKE @SearchLike")}))";
+
+        var sql = $@"
             WHERE (@Search IS NULL OR CAST(c.DocNum AS NVARCHAR(20)) LIKE @SearchLike
-                   OR c.CardCode LIKE @SearchLike OR cust.CardName LIKE @SearchLike)
+                   OR c.CardCode LIKE @SearchLike OR cust.CardName LIKE @SearchLike{itemSearch})
               AND (@DateFrom IS NULL OR c.DocDate >= @DateFrom)
               AND (@DateTo IS NULL OR c.DocDate <= @DateTo)
               AND (@Status IS NULL OR c.DocStatus = @Status)
@@ -176,7 +182,7 @@ public class SqlSalesService : ISalesService
     public async Task<PagedResult<SalesQuotationDto>> GetQuotationsAsync(SalesDocumentQuery query, CancellationToken ct = default)
     {
         using var db = _connectionFactory.CreateConnection();
-        var (whereSql, p) = BuildFilters(query, includeSalesEmployee: true, includeWarehouseExists: true, lineTableForWarehouse: "QUT1");
+        var (whereSql, p) = BuildFilters(query, includeSalesEmployee: true, includeWarehouseExists: true, lineTableForWarehouse: "QUT1", aroma: ItemUdf.Aroma(await ItemUdf.HasAromaAsync(db, ct), "si"));
 
         var countSql = $"SELECT COUNT(*) FROM OQUT c LEFT JOIN OCRD cust ON cust.CardCode = c.CardCode {whereSql}";
         var total = await db.ExecuteScalarAsync<int>(new CommandDefinition(countSql, p, cancellationToken: ct));
@@ -247,7 +253,7 @@ public class SqlSalesService : ISalesService
     public async Task<PagedResult<SalesOrderDto>> GetOrdersAsync(SalesDocumentQuery query, CancellationToken ct = default)
     {
         using var db = _connectionFactory.CreateConnection();
-        var (whereSql, p) = BuildFilters(query, includeSalesEmployee: true, includeWarehouseExists: true, lineTableForWarehouse: "RDR1");
+        var (whereSql, p) = BuildFilters(query, includeSalesEmployee: true, includeWarehouseExists: true, lineTableForWarehouse: "RDR1", aroma: ItemUdf.Aroma(await ItemUdf.HasAromaAsync(db, ct), "si"));
 
         var countSql = $"SELECT COUNT(*) FROM ORDR c LEFT JOIN OCRD cust ON cust.CardCode = c.CardCode {whereSql}";
         var total = await db.ExecuteScalarAsync<int>(new CommandDefinition(countSql, p, cancellationToken: ct));
@@ -329,7 +335,7 @@ public class SqlSalesService : ISalesService
     public async Task<PagedResult<DeliveryDto>> GetDeliveriesAsync(SalesDocumentQuery query, CancellationToken ct = default)
     {
         using var db = _connectionFactory.CreateConnection();
-        var (whereSql, p) = BuildFilters(query, includeSalesEmployee: true, includeWarehouseExists: true, lineTableForWarehouse: "DLN1");
+        var (whereSql, p) = BuildFilters(query, includeSalesEmployee: true, includeWarehouseExists: true, lineTableForWarehouse: "DLN1", aroma: ItemUdf.Aroma(await ItemUdf.HasAromaAsync(db, ct), "si"));
 
         var countSql = $"SELECT COUNT(*) FROM ODLN c LEFT JOIN OCRD cust ON cust.CardCode = c.CardCode {whereSql}";
         var total = await db.ExecuteScalarAsync<int>(new CommandDefinition(countSql, p, cancellationToken: ct));
@@ -401,7 +407,7 @@ public class SqlSalesService : ISalesService
     public async Task<PagedResult<ArInvoiceDto>> GetInvoicesAsync(SalesDocumentQuery query, CancellationToken ct = default)
     {
         using var db = _connectionFactory.CreateConnection();
-        var (whereSql, p) = BuildFilters(query, includeSalesEmployee: true, includeWarehouseExists: true, lineTableForWarehouse: "INV1");
+        var (whereSql, p) = BuildFilters(query, includeSalesEmployee: true, includeWarehouseExists: true, lineTableForWarehouse: "INV1", aroma: ItemUdf.Aroma(await ItemUdf.HasAromaAsync(db, ct), "si"));
 
         var countSql = $"SELECT COUNT(*) FROM OINV c LEFT JOIN OCRD cust ON cust.CardCode = c.CardCode {whereSql}";
         var total = await db.ExecuteScalarAsync<int>(new CommandDefinition(countSql, p, cancellationToken: ct));
@@ -481,7 +487,7 @@ public class SqlSalesService : ISalesService
     public async Task<PagedResult<ArCreditMemoDto>> GetCreditMemosAsync(SalesDocumentQuery query, CancellationToken ct = default)
     {
         using var db = _connectionFactory.CreateConnection();
-        var (whereSql, p) = BuildFilters(query, includeSalesEmployee: false, includeWarehouseExists: true, lineTableForWarehouse: "RIN1");
+        var (whereSql, p) = BuildFilters(query, includeSalesEmployee: false, includeWarehouseExists: true, lineTableForWarehouse: "RIN1", aroma: ItemUdf.Aroma(await ItemUdf.HasAromaAsync(db, ct), "si"));
 
         var countSql = $"SELECT COUNT(*) FROM ORIN c LEFT JOIN OCRD cust ON cust.CardCode = c.CardCode {whereSql}";
         var total = await db.ExecuteScalarAsync<int>(new CommandDefinition(countSql, p, cancellationToken: ct));
@@ -652,7 +658,7 @@ public class SqlSalesService : ISalesService
                 (SELECT COUNT(*) FROM ORDR WHERE YEAR(DocDate) = YEAR(GETDATE()) AND MONTH(DocDate) = MONTH(GETDATE())) AS SalesOrdersThisMonth,
                 (SELECT COUNT(*) FROM ORDR WHERE YEAR(DocDate) = YEAR(GETDATE())) AS SalesOrdersThisYear,
                 (SELECT COUNT(*) FROM ODLN) AS TotalDeliveries,
-                (SELECT COUNT(*) FROM ODLN WHERE DocStatus = 'O') AS PendingDeliveries,
+                (SELECT COUNT(*) FROM ODLN WHERE DocStatus = 'O'" + DeliveryRules.AndExcludeIntercompanyUnaliased + @") AS PendingDeliveries,
                 (SELECT COUNT(*) FROM OINV) AS TotalArInvoices,
                 (SELECT COUNT(*) FROM OINV WHERE DocStatus = 'O') AS OpenArInvoices,
                 (SELECT COUNT(*) FROM OINV WHERE DocStatus = 'O' AND DocDueDate < GETDATE()) AS OverdueArInvoices,
@@ -718,7 +724,7 @@ public class SqlSalesService : ISalesService
             SELECT
                 (SELECT ISNULL(SUM(DocTotal), 0) FROM OQUT WHERE DocStatus = 'O') AS OpenQuotationValue,
                 (SELECT ISNULL(SUM(DocTotal), 0) FROM ORDR WHERE DocStatus = 'O') AS OpenSalesOrderValue,
-                (SELECT ISNULL(SUM(DocTotal), 0) FROM ODLN WHERE DocStatus = 'O') AS OpenDeliveryValue,
+                (SELECT ISNULL(SUM(DocTotal), 0) FROM ODLN WHERE DocStatus = 'O'" + DeliveryRules.AndExcludeIntercompanyUnaliased + @") AS OpenDeliveryValue,
                 (SELECT ISNULL(SUM(DocTotal), 0) FROM OINV WHERE DocStatus = 'O') AS OpenArInvoiceValue,
                 (SELECT ISNULL(SUM(DocTotal - PaidToDate), 0) FROM OINV WHERE DocStatus = 'O') AS OutstandingReceivables,
                 (SELECT ISNULL(SUM(DocTotal), 0) FROM ORCT WHERE Canceled = 'N') AS IncomingPaymentsValue";
@@ -771,14 +777,14 @@ public class SqlSalesService : ISalesService
         p.Add("QuarterStart", quarterStart);
         p.Add("OverdueCutoff", today.AddDays(-60));
 
-        const string kpiSql = @"
+        var kpiSql = @"
             SELECT
-                (SELECT COUNT(*) FROM OCRD WHERE CardType = 'C' AND frozenFor = 'N') AS TotalCustomers,
-                (SELECT COUNT(*) FROM OCRD WHERE CardType = 'C' AND CreateDate >= @QuarterStart) AS NewCustomersThisQuarter,
+                (SELECT COUNT(*) FROM OCRD WHERE CardType = 'C' AND frozenFor = 'N'" + SalesScopeSql.CustomerPredicate(_scope.Current) + @") AS TotalCustomers,
+                (SELECT COUNT(*) FROM OCRD WHERE CardType = 'C' AND CreateDate >= @QuarterStart" + SalesScopeSql.CustomerPredicate(_scope.Current) + @") AS NewCustomersThisQuarter,
                 (SELECT COUNT(*) FROM ORDR WHERE DocStatus = 'O' AND CANCELED = 'N') AS OpenSalesOrders,
                 (SELECT ISNULL(SUM(DocTotal), 0) FROM ORDR WHERE DocStatus = 'O' AND CANCELED = 'N') AS OpenSalesOrderValue,
-                (SELECT COUNT(*) FROM ODLN WHERE DocStatus = 'O' AND CANCELED = 'N') AS PendingInvoices,
-                (SELECT ISNULL(SUM(DocTotal), 0) FROM ODLN WHERE DocStatus = 'O' AND CANCELED = 'N') AS PendingInvoiceValue,
+                (SELECT COUNT(*) FROM ODLN WHERE DocStatus = 'O' AND CANCELED = 'N'" + DeliveryRules.AndExcludeIntercompanyUnaliased + @") AS PendingInvoices,
+                (SELECT ISNULL(SUM(DocTotal), 0) FROM ODLN WHERE DocStatus = 'O' AND CANCELED = 'N'" + DeliveryRules.AndExcludeIntercompanyUnaliased + @") AS PendingInvoiceValue,
                 (SELECT ISNULL(SUM(DocTotal - PaidToDate), 0) FROM OINV WHERE DocStatus = 'O' AND CANCELED = 'N') AS TotalOutstanding,
                 (SELECT ISNULL(SUM(DocTotal - PaidToDate), 0) FROM OINV WHERE DocStatus = 'O' AND CANCELED = 'N' AND DocDate < @OverdueCutoff) AS OverdueOutstanding";
         var dto = await db.QuerySingleAsync<SalesOverviewDto>(new CommandDefinition(kpiSql, p, cancellationToken: ct));
@@ -873,9 +879,13 @@ public class SqlSalesService : ISalesService
     public async Task<OpenSalesOrdersDto> GetOpenOrdersBoardAsync(string? filter, string? search, int page, int pageSize, CancellationToken ct = default)
     {
         using var db = _connectionFactory.CreateConnection();
+        var aromaOn = await ItemUdf.HasAromaAsync(db, ct);
+        var searchLike = string.IsNullOrWhiteSpace(search) ? null : $"%{search.Trim()}%";
 
-        const string sql = @"
+        var sql = $@"
             SELECT TOP 2000
+                CASE WHEN @SearchLike IS NOT NULL AND EXISTS (SELECT 1 FROM RDR1 sl WHERE sl.DocEntry = h.DocEntry AND sl.ItemCode IN
+                     (SELECT si.ItemCode FROM OITM si WHERE si.ItemCode LIKE @SearchLike OR si.ItemName LIKE @SearchLike OR {ItemUdf.Aroma(aromaOn, "si")} LIKE @SearchLike)) THEN 1 ELSE 0 END AS ItemHit,
                 h.DocEntry, h.DocNum, h.DocDate AS PostingDate, h.CardCode AS CustomerCode, h.CardName AS CustomerName,
                 c.City, h.DocDueDate AS Eta, h.DocTotal AS Total,
                 (SELECT TOP 1 l.Dscription FROM RDR1 l WHERE l.DocEntry = h.DocEntry ORDER BY l.LineNum) AS Item,
@@ -892,11 +902,13 @@ public class SqlSalesService : ISalesService
             WHERE h.DocStatus = 'O' AND h.CANCELED = 'N'
             ORDER BY h.DocDate DESC, h.DocEntry DESC";
 
-        var raw = (await db.QueryAsync(new CommandDefinition(sql, cancellationToken: ct))).ToList();
+        var raw = (await db.QueryAsync(new CommandDefinition(sql, new { SearchLike = searchLike }, cancellationToken: ct))).ToList();
 
+        var itemHits = new HashSet<int>();
         var rows = new List<OpenSalesOrderRowDto>();
         foreach (var r in raw)
         {
+            if (Convert.ToInt32(r.ItemHit) == 1) itemHits.Add((int)r.DocEntry);
             double ordered = Convert.ToDouble(r.OrderedQty);
             double pending = Convert.ToDouble(r.PendingQty);
             int prodOrders = Convert.ToInt32(r.ProdOrders);
@@ -918,7 +930,7 @@ public class SqlSalesService : ISalesService
                 Item = r.Item, Uom = r.Uom, LineCount = r.LineCount,
                 OrderedQty = ordered, PendingQty = pending,
                 ProductionStatus = prodStatus, ProductionProgress = progress,
-                Eta = r.Eta, Total = r.Total,
+                Eta = r.Eta, Total = r.Total, DaysOpen = (int)(DateTime.Today - ((DateTime)r.PostingDate).Date).TotalDays,
                 DeliveryStatus = pending <= 0 ? "Dispatched" : pending >= ordered ? "Not Dispatched" : "Part Dispatched"
             });
         }
@@ -948,12 +960,23 @@ public class SqlSalesService : ISalesService
             filtered = filtered.Where(x =>
                 x.DocNum.ToString().Contains(t, StringComparison.OrdinalIgnoreCase)
                 || (x.CustomerName?.Contains(t, StringComparison.OrdinalIgnoreCase) ?? false)
-                || (x.Item?.Contains(t, StringComparison.OrdinalIgnoreCase) ?? false));
+                || (x.Item?.Contains(t, StringComparison.OrdinalIgnoreCase) ?? false)
+                || itemHits.Contains(x.DocEntry));
         }
 
         var list = filtered.ToList();
         result.TotalCount = list.Count;
         result.Rows = list.Skip((page - 1) * pageSize).Take(pageSize).ToList();
+
+        // ETA from production is on the order LINES: looked up for the rows of this page only.
+        var udf = await DispatchUdfs.LoadAsync(db, ct);
+        if (udf.Eta && result.Rows.Count > 0)
+        {
+            var etas = (await db.QueryAsync<(int DocEntry, string Eta)>(new CommandDefinition(
+                "SELECT DISTINCT DocEntry, U_ETA FROM RDR1 WHERE DocEntry IN @Ids AND ISNULL(U_ETA, '') <> ''",
+                new { Ids = result.Rows.Select(x => x.DocEntry).ToArray() }, cancellationToken: ct))).ToLookup(e => e.DocEntry, e => e.Eta);
+            foreach (var row in result.Rows) { var v = etas[row.DocEntry].ToList(); if (v.Count > 0) row.EtaProduction = string.Join("; ", v); }
+        }
         return result;
     }
 }

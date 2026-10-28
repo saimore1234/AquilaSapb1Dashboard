@@ -20,10 +20,47 @@ namespace SAPB1.Api.Controllers.Admin;
 public class AdminUsersController : ControllerBase
 {
     private readonly IAdminService _adminService;
+    private readonly ICompanyConnectionFactory _sap;
+    private readonly ICompanyContext _company;
 
-    public AdminUsersController(IAdminService adminService)
+    public AdminUsersController(IAdminService adminService, ICompanyConnectionFactory sap, ICompanyContext company)
     {
         _adminService = adminService;
+        _sap = sap;
+        _company = company;
+    }
+
+    /// <summary>Who is linked to which SAP salesperson (for the company the administrator is signed in to), plus the salesperson list to choose from.</summary>
+    [HttpGet("salesperson-links")]
+    [RequirePermission("Administration.View")]
+    public async Task<ActionResult<ApiResponse<UserSalespersonLinksDto>>> GetSalespersonLinks(CancellationToken ct)
+    {
+        var dto = new UserSalespersonLinksDto { Links = await _adminService.GetSalespersonLinksAsync(_company.CompanyCode, ct) };
+        using var db = _sap.CreateUnscopedConnection();
+        dto.Salespersons = (await Dapper.SqlMapper.QueryAsync<SalesScopePersonDto>(db, new Dapper.CommandDefinition(
+            "SELECT SlpCode AS Code, SlpName + CASE WHEN Active = 'Y' THEN '' ELSE ' (inactive)' END AS Name FROM OSLP WHERE SlpCode > 0 ORDER BY Active DESC, SlpName", cancellationToken: ct))).ToList();
+        return Ok(ApiResponse<UserSalespersonLinksDto>.Ok(dto));
+    }
+
+    /// <summary>
+    /// Links a portal user to one or more SAP salespersons. A login with the Sales role (or any linked login) then only sees those salespersons'
+    /// customers, orders, invoices and targets — enforced on the server. An empty list removes the link.
+    /// </summary>
+    [HttpPut("{id:int}/salespersons")]
+    [RequirePermission("Administration.Edit")]
+    public async Task<ActionResult<ApiResponse<object>>> SetSalespersons(int id, [FromBody] SetSalespersonLinksDto dto, CancellationToken ct)
+    {
+        var codes = (dto.Salespersons ?? new()).Where(c => c > 0).Distinct().ToList();
+        if (codes.Count > 0)
+        {
+            using var db = _sap.CreateUnscopedConnection();
+            var found = await Dapper.SqlMapper.ExecuteScalarAsync<int>(db, new Dapper.CommandDefinition(
+                "SELECT COUNT(*) FROM OSLP WHERE SlpCode IN @Codes", new { Codes = codes }, cancellationToken: ct));
+            if (found != codes.Count) return BadRequest(ApiResponse<object>.Fail("One or more salespersons do not exist in SAP."));
+        }
+        var ok = await _adminService.SetSalespersonLinksAsync(id, _company.CompanyCode, codes, User.Identity?.Name ?? "admin", ct);
+        if (!ok) return NotFound(ApiResponse<object>.Fail("User not found."));
+        return Ok(ApiResponse<object>.Ok(new { }, "Salesperson link saved."));
     }
 
     [HttpGet]

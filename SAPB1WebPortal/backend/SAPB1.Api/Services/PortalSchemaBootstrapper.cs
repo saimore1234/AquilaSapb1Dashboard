@@ -142,6 +142,20 @@ IF OBJECT_ID('dbo.SalespersonTargets', 'U') IS NOT NULL AND COL_LENGTH('dbo.Sale
     EXEC('ALTER TABLE dbo.SalespersonTargets ADD CONSTRAINT CK_SalespersonTargets_Scope CHECK (Scope IN (''Company'',''Unit'',''Salesperson'') AND ((Scope = ''Salesperson'' AND SapSlpCode > 0) OR (Scope <> ''Salesperson'' AND SapSlpCode = 0)))');
 ";
 
+    // Same statement as db/008_UserSalespersonMap.sql (links portal users to SAP salespersons). Additive only.
+    private const string SalespersonMapSql = @"
+IF OBJECT_ID('dbo.UserSalespersonMap', 'U') IS NULL
+CREATE TABLE dbo.UserSalespersonMap (
+    UserId      INT           NOT NULL,
+    CompanyCode NVARCHAR(50)  NOT NULL,
+    SapSlpCode  INT           NOT NULL,
+    CreatedBy   NVARCHAR(100) NULL,
+    CreatedAt   DATETIME2     NOT NULL CONSTRAINT DF_UserSalespersonMap_At DEFAULT (SYSUTCDATETIME()),
+    CONSTRAINT PK_UserSalespersonMap PRIMARY KEY (UserId, CompanyCode, SapSlpCode),
+    CONSTRAINT FK_UserSalespersonMap_Users FOREIGN KEY (UserId) REFERENCES dbo.Users(Id) ON DELETE CASCADE
+);
+";
+
     public async Task StartAsync(CancellationToken cancellationToken)
     {
         try
@@ -151,6 +165,7 @@ IF OBJECT_ID('dbo.SalespersonTargets', 'U') IS NOT NULL AND COL_LENGTH('dbo.Sale
             await db.ExecuteAsync(new CommandDefinition(Sql, cancellationToken: cancellationToken));
             await db.ExecuteAsync(new CommandDefinition(TargetsSql, cancellationToken: cancellationToken));
             await db.ExecuteAsync(new CommandDefinition(ScopeSql, cancellationToken: cancellationToken));
+            await db.ExecuteAsync(new CommandDefinition(SalespersonMapSql, cancellationToken: cancellationToken));
         }
         catch (Exception ex)
         {

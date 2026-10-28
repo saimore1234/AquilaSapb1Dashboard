@@ -61,6 +61,7 @@ public class SalesTargetsController : ControllerBase
 
     [HttpPost]
     [RequirePermission("Sales", "targets", "Create")]
+    [BlockRestricted]
     public async Task<ActionResult<ApiResponse<int>>> Create([FromBody] SaveSalesTargetRequest request, CancellationToken ct)
     {
         var r = await _targets.CreateAsync(request, CurrentUser, ct);
@@ -69,6 +70,7 @@ public class SalesTargetsController : ControllerBase
 
     [HttpPut("{id:int}")]
     [RequirePermission("Sales", "targets", "Edit")]
+    [BlockRestricted]
     public async Task<ActionResult<ApiResponse<int>>> Update(int id, [FromBody] SaveSalesTargetRequest request, CancellationToken ct)
     {
         var r = await _targets.UpdateAsync(id, request, CurrentUser, ct);
@@ -77,6 +79,7 @@ public class SalesTargetsController : ControllerBase
 
     [HttpPut("{id:int}/submit")]
     [RequirePermission("Sales", "targets", "Edit")]
+    [BlockRestricted]
     public async Task<ActionResult<ApiResponse<int>>> Submit(int id, CancellationToken ct)
     {
         var r = await _targets.SubmitAsync(id, CurrentUser, ct);
@@ -86,6 +89,7 @@ public class SalesTargetsController : ControllerBase
     /// <summary>Starts a revision of an APPROVED target: creates a new Draft (the approved one stays live until the revision is approved).</summary>
     [HttpPost("{id:int}/revise")]
     [RequirePermission("Sales", "targets", "Create")]
+    [BlockRestricted]
     public async Task<ActionResult<ApiResponse<int>>> Revise(int id, CancellationToken ct)
     {
         var r = await _targets.ReviseAsync(id, CurrentUser, ct);
@@ -94,6 +98,7 @@ public class SalesTargetsController : ControllerBase
 
     [HttpDelete("{id:int}")]
     [RequirePermission("Sales", "targets", "Delete")]
+    [BlockRestricted]
     public async Task<ActionResult<ApiResponse<int>>> Delete(int id, CancellationToken ct)
     {
         var r = await _targets.DeleteAsync(id, CurrentUser, ct);
@@ -115,6 +120,7 @@ public class SalesTargetApprovalsController : ControllerBase
 
     [HttpPost("{id:int}/approve")]
     [RequirePermission("Sales", "targets", "Approve")]
+    [BlockRestricted]
     public async Task<ActionResult<ApiResponse<int>>> Approve(int id, [FromBody] ReviewSalesTargetRequest? body, CancellationToken ct)
     {
         var r = await _targets.ApproveAsync(id, body?.Remarks, CurrentUser, ct);
@@ -123,6 +129,7 @@ public class SalesTargetApprovalsController : ControllerBase
 
     [HttpPost("{id:int}/reject")]
     [RequirePermission("Sales", "targets", "Approve")]
+    [BlockRestricted]
     public async Task<ActionResult<ApiResponse<int>>> Reject(int id, [FromBody] ReviewSalesTargetRequest? body, CancellationToken ct)
     {
         var r = await _targets.RejectAsync(id, body?.Remarks, CurrentUser, ct);

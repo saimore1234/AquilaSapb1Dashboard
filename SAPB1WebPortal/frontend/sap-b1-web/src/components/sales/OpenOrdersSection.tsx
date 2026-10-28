@@ -84,7 +84,7 @@ export default function OpenOrdersSection({ reportTo, pageSize = 8 }: { reportTo
           <input
             value={search}
             onChange={(e) => setSearch(e.target.value)}
-            placeholder="Search order, customer, item"
+            placeholder="Search order, customer, item or Aroma code"
             aria-label="Search open sales orders"
             className="pl-8 pr-3 py-2 text-sm rounded-lg border border-border-strong bg-surface text-ink-primary w-64 max-w-full"
           />
@@ -105,7 +105,9 @@ export default function OpenOrdersSection({ reportTo, pageSize = 8 }: { reportTo
                 <th className="px-4 py-2.5 font-medium text-right">Pending Qty</th>
                 <th className="px-4 py-2.5 font-medium">Production Status</th>
                 <th className="px-4 py-2.5 font-medium">Progress</th>
-                <th className="px-4 py-2.5 font-medium">ETA</th>
+                <th className="px-4 py-2.5 font-medium" title="The order's delivery date in SAP">Delivery Date</th>
+                <th className="px-4 py-2.5 font-medium" title="ETA from production, as entered on the order lines">ETA (Production)</th>
+                <th className="px-4 py-2.5 font-medium text-right" title="Days from the order date to today">No. of Days</th>
                 <th className="px-4 py-2.5 font-medium">Delivery Status</th>
               </tr>
             </thead>
@@ -113,7 +115,7 @@ export default function OpenOrdersSection({ reportTo, pageSize = 8 }: { reportTo
               {boardLoading
                 ? Array.from({ length: 5 }).map((_, i) => (
                     <tr key={i} className="border-b border-border last:border-0">
-                      <td colSpan={9} className="px-4 py-3">
+                      <td colSpan={11} className="px-4 py-3">
                         <Skeleton className="h-4 w-full" />
                       </td>
                     </tr>
@@ -154,6 +156,8 @@ export default function OpenOrdersSection({ reportTo, pageSize = 8 }: { reportTo
                         )}
                       </td>
                       <td className="px-4 py-3 whitespace-nowrap">{formatDate(r.eta)}</td>
+                      <td className="px-4 py-3 whitespace-nowrap">{r.etaProduction ?? '—'}</td>
+                      <td className="px-4 py-3 text-right tabular-nums">{r.daysOpen}</td>
                       <td className="px-4 py-3">
                         <StatusPill text={r.deliveryStatus} />
                       </td>
@@ -161,7 +165,7 @@ export default function OpenOrdersSection({ reportTo, pageSize = 8 }: { reportTo
                   ))}
               {!boardLoading && board?.rows.length === 0 && (
                 <tr>
-                  <td colSpan={9} className="px-4 py-10 text-center text-ink-tertiary">
+                  <td colSpan={11} className="px-4 py-10 text-center text-ink-tertiary">
                     No open sales orders match.
                   </td>
                 </tr>
