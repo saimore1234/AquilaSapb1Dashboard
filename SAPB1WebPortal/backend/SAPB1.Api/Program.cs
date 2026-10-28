@@ -45,6 +45,7 @@ builder.Services.Configure<JwtOptions>(builder.Configuration.GetSection(JwtOptio
 builder.Services.Configure<CompanyDatabaseOptions>(builder.Configuration.GetSection(CompanyDatabaseOptions.SectionName));
 
 builder.Services.AddHttpContextAccessor();
+builder.Services.AddMemoryCache();
 
 // ---------------------------------------------------------------
 // Dependency injection

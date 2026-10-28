@@ -30,6 +30,7 @@ public class SalesController : ControllerBase
     }
 
     [HttpGet("dashboard")]
+    [ShortCache(30)]
     public async Task<ActionResult<ApiResponse<SalesDashboardDto>>> GetDashboard(CancellationToken ct)
     {
         var result = await _salesService.GetDashboardAsync(ct);
@@ -38,6 +39,7 @@ public class SalesController : ControllerBase
 
     /// <summary>Sales Dashboard: actual turnover vs approved targets, the named units, open order lines and outstanding.</summary>
     [HttpGet("dashboard/performance")]
+    [ShortCache(30)]
     public async Task<ActionResult<ApiResponse<SalesPerformanceDto>>> GetPerformance([FromQuery] PerformanceQuery query, CancellationToken ct)
     {
         if (query.DateFrom.HasValue && query.DateTo.HasValue && query.DateFrom.Value.Date > query.DateTo.Value.Date)
@@ -49,6 +51,7 @@ public class SalesController : ControllerBase
 
     /// <summary>Document activity under the shared dashboard filters (period-based totals; current-position open/pending counts).</summary>
     [HttpGet("dashboard/activity")]
+    [ShortCache(30)]
     public async Task<ActionResult<ApiResponse<SalesActivityDto>>> GetActivity([FromQuery] ActivityQuery query, CancellationToken ct)
     {
         if (query.DateFrom.HasValue && query.DateTo.HasValue && query.DateFrom.Value.Date > query.DateTo.Value.Date)
@@ -59,6 +62,7 @@ public class SalesController : ControllerBase
     }
 
     [HttpGet("analytics")]
+    [ShortCache(30)]
     public async Task<ActionResult<ApiResponse<SalesAnalyticsDto>>> GetAnalytics(CancellationToken ct)
     {
         var result = await _salesService.GetAnalyticsAsync(ct);
@@ -103,6 +107,7 @@ public class SalesController : ControllerBase
     }
 
     [HttpGet("orders")]
+    [ShortCache(30)]
     public async Task<ActionResult<ApiResponse<PagedResult<SalesOrderDto>>>> GetOrders([FromQuery] SalesDocumentQuery query, CancellationToken ct)
     {
         var result = await _salesService.GetOrdersAsync(query, ct);
@@ -133,6 +138,7 @@ public class SalesController : ControllerBase
     }
 
     [HttpGet("invoices")]
+    [ShortCache(30)]
     public async Task<ActionResult<ApiResponse<PagedResult<ArInvoiceDto>>>> GetInvoices([FromQuery] SalesDocumentQuery query, CancellationToken ct)
     {
         var result = await _salesService.GetInvoicesAsync(query, ct);

@@ -413,21 +413,26 @@ public class SqlSalesService : ISalesService
         var total = await db.ExecuteScalarAsync<int>(new CommandDefinition(countSql, p, cancellationToken: ct));
 
         var udf = await DispatchUdfs.LoadAsync(db, ct);
+        // The order-date lookup is evaluated for the 25 rows of the page only (computed outside the paged derived table); inside the sorted
+        // query SQL Server would evaluate it for every invoice before sorting.
         var listSql = $@"
-            SELECT c.DocEntry, c.DocNum, c.CardCode AS CustomerCode, cust.CardName AS CustomerName,
-                   c.DocDate AS PostingDate, c.DocDueDate AS DueDate, s.SlpName AS SalesEmployee,
-                   c.DocStatus AS Status, c.DocTotal AS Total, c.PaidToDate AS Paid, c.DocCur AS Currency,
-                   {udf.LrNoExpr("c")} AS LrNo, {udf.LrDateExpr("c")} AS LrDate, {udf.TransporterExpr("c")} AS Transporter,
+            SELECT pg.*,
                    (SELECT MIN(o.DocDate) FROM INV1 il JOIN ORDR o ON o.DocEntry = CASE
                         WHEN il.BaseType = 17 THEN il.BaseEntry
                         WHEN il.BaseType = 15 THEN (SELECT TOP 1 d.BaseEntry FROM DLN1 d WHERE d.DocEntry = il.BaseEntry AND d.LineNum = il.BaseLine AND d.BaseType = 17) END
-                    WHERE il.DocEntry = c.DocEntry) AS OrderDate
-            FROM OINV c
-            LEFT JOIN OCRD cust ON cust.CardCode = c.CardCode
-            LEFT JOIN OSLP s ON s.SlpCode = c.SlpCode
-            {whereSql}
-            ORDER BY c.DocDate DESC, c.DocEntry DESC
-            OFFSET @Skip ROWS FETCH NEXT @PageSize ROWS ONLY";
+                    WHERE il.DocEntry = pg.DocEntry) AS OrderDate
+            FROM (
+                SELECT c.DocEntry, c.DocNum, c.CardCode AS CustomerCode, cust.CardName AS CustomerName,
+                       c.DocDate AS PostingDate, c.DocDueDate AS DueDate, s.SlpName AS SalesEmployee,
+                       c.DocStatus AS Status, c.DocTotal AS Total, c.PaidToDate AS Paid, c.DocCur AS Currency,
+                       {udf.LrNoExpr("c")} AS LrNo, {udf.LrDateExpr("c")} AS LrDate, {udf.TransporterExpr("c")} AS Transporter
+                FROM OINV c
+                LEFT JOIN OCRD cust ON cust.CardCode = c.CardCode
+                LEFT JOIN OSLP s ON s.SlpCode = c.SlpCode
+                {whereSql}
+                ORDER BY c.DocDate DESC, c.DocEntry DESC
+                OFFSET @Skip ROWS FETCH NEXT @PageSize ROWS ONLY) pg
+            ORDER BY pg.PostingDate DESC, pg.DocEntry DESC";
 
         var rows = (await db.QueryAsync(new CommandDefinition(listSql, p, cancellationToken: ct))).ToList();
         var items = rows.Select(r => new ArInvoiceDto
