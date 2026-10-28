@@ -40,7 +40,7 @@ export default function PurchaseQuotations() {
       keyField={(r) => String(r.docEntry)}
       docEntryField={(r) => r.docEntry}
       routeBase="/purchase/quotations"
-      searchPlaceholder="Quotation #, vendor…"
+      searchPlaceholder="Quotation #, vendor, item or Aroma code…"
       filterFields={['date', 'vendor', 'status', 'buyer']}
       emptyMessage="No purchase quotations found."
       renderMobileCard={(r) => (

@@ -113,6 +113,8 @@ export interface SupplierDetail {
 }
 
 export interface ItemListItem {
+  /** Item master user-defined field "Aroma Code". */
+  aromaCode: string | null;
   itemCode: string;
   itemName: string;
   itemGroup: string | null;
@@ -151,6 +153,8 @@ export interface ItemDetail {
 }
 
 export interface InventoryListItem {
+  /** Item master user-defined field "Aroma Code". */
+  aromaCode: string | null;
   itemCode: string;
   itemName: string;
   itemGroup: string;
@@ -284,6 +288,20 @@ export interface CurrentUser {
   permissions: string[];
   /** Explicit page rules, "{module}.{page}.{action}" -> granted. */
   pageRules: Record<string, boolean>;
+  /** Which SAP salespersons this login is limited to (restricted logins only see their own customers, orders, invoices and targets). */
+  salesScope?: SalesScope | null;
+}
+
+export interface SalesScope {
+  restricted: boolean;
+  /** false = restricted but not linked to a salesperson yet: sees nothing. */
+  linked: boolean;
+  salespersons: { code: number; name: string }[];
+}
+
+export interface UserSalespersonLinks {
+  links: Record<string, number[]>;
+  salespersons: { code: number; name: string }[];
 }
 
 export interface AdminUser {
@@ -1564,6 +1582,10 @@ export interface TurnoverBreakup {
 }
 
 export interface OpenSalesOrderRow {
+  /** ETA from production as entered on the order lines. */
+  etaProduction: string | null;
+  /** Days from the order date to today. */
+  daysOpen: number;
   docEntry: number;
   docNum: number;
   postingDate: string;
@@ -1605,6 +1627,13 @@ export interface InvoiceRegisterQuery {
 }
 
 export interface InvoiceRegisterRow {
+  /** Aroma Code of the first line's item. */
+  aromaCode: string | null;
+  lrNo: string | null;
+  lrDate: string | null;
+  transporter: string | null;
+  orderDate: string | null;
+  daysOrderToInvoice: number | null;
   docEntry: number;
   docNum: number;
   docDate: string;
@@ -1634,6 +1663,8 @@ export interface CustomerAgeingRow {
   days31To60: number;
   days61To90: number;
   days90Plus: number;
+  /** Days from the due date of the customer's oldest unpaid invoice to today. */
+  overdueDays: number | null;
   total: number;
   risk: 'Low' | 'Watch' | 'High';
 }
@@ -1780,6 +1811,7 @@ export interface SalesTargetLine {
 }
 
 export interface SalesTargetItemOption {
+  aromaCode: string | null;
   code: string;
   name: string;
   group: string | null;
@@ -1901,6 +1933,8 @@ export interface OpenOrderTotals {
 }
 
 export interface OpenSalesOrderLine {
+  /** Item master user-defined field "Aroma Code". */
+  aromaCode: string | null;
   /** ETA from production, exactly as entered on the order line (free text). */
   etaProduction: string | null;
   /** Days from the order date to today. */
@@ -1935,6 +1969,8 @@ export interface OpenSalesOrderReport {
 }
 
 export interface OpenPurchaseOrderLine {
+  /** Item master user-defined field "Aroma Code". */
+  aromaCode: string | null;
   docEntry: number;
   docNum: number;
   postingDate: string;
@@ -1961,6 +1997,8 @@ export interface OpenPurchaseOrderReport {
 }
 
 export interface SalesRegisterRow {
+  /** Item master user-defined field "Aroma Code". */
+  aromaCode: string | null;
   lrNo: string | null;
   lrDate: string | null;
   transporter: string | null;
@@ -2102,6 +2140,8 @@ export interface PendingDeliveryReport {
 }
 
 export interface SalesAnalysisRow {
+  /** Item master user-defined field "Aroma Code". */
+  aromaCode: string | null;
   key: string;
   name: string;
   invoices: number;
@@ -2265,7 +2305,7 @@ export interface OrderExecutionReport {
 }
 
 export interface SalesActivity {
-  dateFrom: string; dateTo: string; monthFrom: string; yearFrom: string;
+  dateFrom: string; dateTo: string; asOf: string; monthFrom: string; yearFrom: string;
   totalQuotations: number; openQuotations: number;
   totalSalesOrders: number; openSalesOrders: number; salesOrdersThisMonth: number; salesOrdersThisYear: number; openSalesOrderValue: number;
   totalDeliveries: number; pendingDeliveries: number;

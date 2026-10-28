@@ -46,7 +46,7 @@ export default function ApInvoices() {
       keyField={(r) => String(r.docEntry)}
       docEntryField={(r) => r.docEntry}
       routeBase="/purchase/invoices"
-      searchPlaceholder="Invoice #, vendor…"
+      searchPlaceholder="Invoice #, vendor, item or Aroma code…"
       filterFields={['date', 'vendor', 'status']}
       emptyMessage="No A/P invoices found."
       renderMobileCard={(r) => (

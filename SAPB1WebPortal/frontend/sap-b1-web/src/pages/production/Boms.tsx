@@ -37,7 +37,7 @@ export default function Boms() {
       keyField={(r) => r.code}
       routeBase="/production/boms"
       docEntryField={(r) => encodeURIComponent(r.code)}
-      searchPlaceholder="Item code, item name, BOM code…"
+      searchPlaceholder="Item code, item name, BOM code, Aroma code…"
       filterFields={['type']}
       emptyMessage="No BOM found."
       renderMobileCard={(r) => (

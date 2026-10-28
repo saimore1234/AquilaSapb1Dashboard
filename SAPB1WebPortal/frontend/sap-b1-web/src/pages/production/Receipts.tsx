@@ -51,7 +51,7 @@ export default function Receipts() {
       })}
       columns={columns}
       keyField={(r) => String(r.transNum)}
-      searchPlaceholder="Receipt #, item code, item name…"
+      searchPlaceholder="Receipt #, item code, item name, Aroma code…"
       filterFields={['date', 'item', 'warehouse']}
       emptyMessage="No production receipts found."
       renderMobileCard={(r) => (

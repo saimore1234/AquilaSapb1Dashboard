@@ -101,8 +101,9 @@ public class SqlReportsService : IReportsService
     {
         using var db = _connectionFactory.CreateConnection();
         var reportingDate = DateTime.Today;
+        var aroma = await ItemUdf.HasAromaAsync(db, ct);
 
-        const string sql = @"
+        var sql = @"
             SELECT w.ItemCode, i.ItemName, w.WhsCode AS WarehouseCode, wh.WhsName AS WarehouseName,
                    w.OnHand, w.StockValue,
                    (SELECT MAX(n.DocDate) FROM OINM n WHERE n.ItemCode = w.ItemCode AND n.Warehouse = w.WhsCode AND n.InQty > 0) AS LastReceiptDate
@@ -110,7 +111,7 @@ public class SqlReportsService : IReportsService
             LEFT JOIN OITM i ON i.ItemCode = w.ItemCode
             LEFT JOIN OWHS wh ON wh.WhsCode = w.WhsCode
             WHERE w.OnHand > 0
-              AND (@Search IS NULL OR w.ItemCode LIKE @SearchLike OR i.ItemName LIKE @SearchLike)
+              AND (@Search IS NULL OR w.ItemCode LIKE @SearchLike OR i.ItemName LIKE @SearchLike" + ItemUdf.AromaOr(aroma, "w.ItemCode") + @")
               AND (@Warehouse IS NULL OR w.WhsCode = @Warehouse)
             ORDER BY w.ItemCode, w.WhsCode";
 
@@ -142,9 +143,10 @@ public class SqlReportsService : IReportsService
     public async Task<PagedResult<InventoryMovementDto>> GetInventoryMovementAsync(InventoryMovementQuery query, CancellationToken ct = default)
     {
         using var db = _connectionFactory.CreateConnection();
+        var aroma = await ItemUdf.HasAromaAsync(db, ct);
 
-        const string filterSql = @"
-            WHERE (@Search IS NULL OR CAST(n.TransNum AS NVARCHAR(20)) LIKE @SearchLike OR n.ItemCode LIKE @SearchLike OR i.ItemName LIKE @SearchLike OR n.Dscription LIKE @SearchLike)
+        var filterSql = @"
+            WHERE (@Search IS NULL OR CAST(n.TransNum AS NVARCHAR(20)) LIKE @SearchLike OR n.ItemCode LIKE @SearchLike OR i.ItemName LIKE @SearchLike OR n.Dscription LIKE @SearchLike" + ItemUdf.AromaOr(aroma, "n.ItemCode") + @")
               AND (@DateFrom IS NULL OR n.DocDate >= @DateFrom)
               AND (@DateTo IS NULL OR n.DocDate <= @DateTo)
               AND (@Item IS NULL OR n.ItemCode = @Item)

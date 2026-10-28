@@ -92,4 +92,33 @@ public class CurrentUserDto
     public List<string> Permissions { get; set; } = new();
     /// <summary>Explicit page rules, key "{module}.{page}.{action}" -> granted.</summary>
     public Dictionary<string, bool> PageRules { get; set; } = new();
+    /// <summary>Which SAP salespersons this login is limited to (null for unrestricted logins).</summary>
+    public SalesScopeDto? SalesScope { get; set; }
+}
+
+public class SalesScopeDto
+{
+    /// <summary>true = the login only sees its own salespersons' customers, orders, invoices and targets.</summary>
+    public bool Restricted { get; set; }
+    /// <summary>false for a restricted login that an administrator has not linked to a salesperson yet — it sees nothing.</summary>
+    public bool Linked { get; set; }
+    public List<SalesScopePersonDto> Salespersons { get; set; } = new();
+}
+
+public class SalesScopePersonDto
+{
+    public int Code { get; set; }
+    public string Name { get; set; } = string.Empty;
+}
+
+public class UserSalespersonLinksDto
+{
+    /// <summary>UserId -> linked SAP salesperson codes (for the company the administrator is signed in to).</summary>
+    public Dictionary<int, List<int>> Links { get; set; } = new();
+    public List<SalesScopePersonDto> Salespersons { get; set; } = new();
+}
+
+public class SetSalespersonLinksDto
+{
+    public List<int> Salespersons { get; set; } = new();
 }

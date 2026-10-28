@@ -141,6 +141,20 @@ public class AuthController : ControllerBase
             PageRules = access.PageRules.ToDictionary(kv => kv.Key, kv => kv.Value)
         };
 
+        // Salesperson scope: tells the UI which salespersons this login is limited to (the SERVER enforces it either way).
+        var scope = HttpContext.RequestServices.GetRequiredService<ISalesScope>().Current;
+        dto.SalesScope = new SalesScopeDto { Restricted = scope.Restricted, Linked = scope.SlpCodes.Length > 0 };
+        if (scope.SlpCodes.Length > 0)
+        {
+            try
+            {
+                using var db = HttpContext.RequestServices.GetRequiredService<ICompanyConnectionFactory>().CreateUnscopedConnection();
+                dto.SalesScope.Salespersons = (await Dapper.SqlMapper.QueryAsync<SalesScopePersonDto>(db, new Dapper.CommandDefinition(
+                    "SELECT SlpCode AS Code, SlpName AS Name FROM OSLP WHERE SlpCode IN @Codes ORDER BY SlpName", new { Codes = scope.SlpCodes }, cancellationToken: ct))).ToList();
+            }
+            catch (Exception) { /* names are cosmetic */ }
+        }
+
         return Ok(ApiResponse<CurrentUserDto>.Ok(dto));
     }
 }

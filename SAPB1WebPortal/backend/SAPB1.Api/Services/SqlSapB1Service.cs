@@ -50,11 +50,13 @@ public class SqlSapB1Service : ISapB1Service
     // caller's JWT is scoped to.
     private readonly ICompanyConnectionFactory _connectionFactory;
     private readonly ILogger<SqlSapB1Service> _logger;
+    private readonly ISalesScope _scope;
 
-    public SqlSapB1Service(ICompanyConnectionFactory connectionFactory, ILogger<SqlSapB1Service> logger)
+    public SqlSapB1Service(ICompanyConnectionFactory connectionFactory, ILogger<SqlSapB1Service> logger, ISalesScope scope)
     {
         _connectionFactory = connectionFactory;
         _logger = logger;
+        _scope = scope;
     }
 
     // ---------------------------------------------------------------
@@ -71,7 +73,7 @@ public class SqlSapB1Service : ISapB1Service
                 (SELECT COUNT(*) FROM OITM WHERE validFor = 'Y') AS TotalItems,
                 (SELECT COUNT(*) FROM ORDR WHERE DocStatus = 'O') AS OpenSalesOrders,
                 (SELECT COUNT(*) FROM OPOR WHERE DocStatus = 'O') AS OpenPurchaseOrders,
-                (SELECT COUNT(*) FROM ODLN WHERE DocStatus = 'O') AS OpenDeliveries,
+                (SELECT COUNT(*) FROM ODLN WHERE DocStatus = 'O'" + DeliveryRules.AndExcludeIntercompanyUnaliased + @") AS OpenDeliveries,
                 (SELECT COUNT(*) FROM OINV WHERE DocStatus = 'O') AS OpenArInvoices,
                 (SELECT COUNT(*) FROM OPCH WHERE DocStatus = 'O') AS OpenApInvoices,
                 (SELECT ISNULL(SUM(w.OnHand * w.AvgPrice), 0)
@@ -108,12 +110,12 @@ public class SqlSapB1Service : ISapB1Service
     {
         using var db = _connectionFactory.CreateConnection();
 
-        const string whereSql = @"
+        var whereSql = @"
             WHERE c.CardType = 'C'
               AND (@Search IS NULL OR c.CardCode LIKE @SearchLike OR c.CardName LIKE @SearchLike
                    OR c.Cellular LIKE @SearchLike OR c.LicTradNum LIKE @SearchLike)
               AND (@Group IS NULL OR g.GroupName = @Group)
-              AND (@Active IS NULL OR c.validFor = @ActiveFlag)";
+              AND (@Active IS NULL OR c.validFor = @ActiveFlag)" + SalesScopeSql.CustomerPredicate(_scope.Current, "c");
 
         var parameters = new DynamicParameters();
         parameters.Add("Search", request.Search);
@@ -161,7 +163,7 @@ public class SqlSapB1Service : ISapB1Service
     {
         using var db = _connectionFactory.CreateConnection();
 
-        const string headerSql = @"
+        var headerSql = @"
             SELECT
                 c.CardCode, c.CardName, g.GroupName,
                 c.Phone1 AS Phone, c.Cellular AS Mobile, c.E_Mail AS Email,
@@ -174,7 +176,7 @@ public class SqlSapB1Service : ISapB1Service
             LEFT JOIN OCRG g ON g.GroupCode = c.GroupCode
             LEFT JOIN OSLP s ON s.SlpCode = c.SlpCode
             LEFT JOIN OTER t ON t.territryID = c.Territory
-            WHERE c.CardType = 'C' AND c.CardCode = @CardCode";
+            WHERE c.CardType = 'C' AND c.CardCode = @CardCode" + SalesScopeSql.CustomerPredicate(_scope.Current, "c");
 
         var customer = await db.QuerySingleOrDefaultAsync<CustomerDetailDto>(
             new CommandDefinition(headerSql, new { CardCode = cardCode }, cancellationToken: ct));
@@ -286,10 +288,11 @@ public class SqlSapB1Service : ISapB1Service
     public async Task<PagedResult<ItemListItemDto>> GetItemsAsync(PagedRequest request, string? group, CancellationToken ct = default)
     {
         using var db = _connectionFactory.CreateConnection();
+        var aroma = ItemUdf.Aroma(await ItemUdf.HasAromaAsync(db, ct));
 
-        const string whereSql = @"
+        var whereSql = $@"
             WHERE (@Search IS NULL OR i.ItemCode LIKE @SearchLike OR i.ItemName LIKE @SearchLike
-                   OR i.CodeBars LIKE @SearchLike)
+                   OR i.CodeBars LIKE @SearchLike OR {aroma} LIKE @SearchLike)
               AND (@Group IS NULL OR b.ItmsGrpNam = @Group)
               AND (@Active IS NULL OR i.validFor = @ActiveFlag)";
 
@@ -312,7 +315,7 @@ public class SqlSapB1Service : ISapB1Service
 
         var listSql = $@"
             SELECT
-                i.ItemCode, i.ItemName, b.ItmsGrpNam AS ItemGroup, i.InvntryUom AS InventoryUom,
+                i.ItemCode, {aroma} AS AromaCode, i.ItemName, b.ItmsGrpNam AS ItemGroup, i.InvntryUom AS InventoryUom,
                 ISNULL(w.OnHand, 0) AS OnHand,
                 ISNULL(w.IsCommited, 0) AS Committed,
                 ISNULL(w.OnHand, 0) - ISNULL(w.IsCommited, 0) AS Available,
@@ -390,16 +393,17 @@ public class SqlSapB1Service : ISapB1Service
         PagedRequest request, string? warehouse, string? itemGroup, string? stockStatus, CancellationToken ct = default)
     {
         using var db = _connectionFactory.CreateConnection();
+        var aroma = ItemUdf.Aroma(await ItemUdf.HasAromaAsync(db, ct));
 
         // Stock status is computed, not stored, so it's filtered with a HAVING-style
         // expression re-used in both the WHERE (for search) and an outer filter.
-        const string baseSql = @"
+        var baseSql = $@"
             FROM OITW w
             INNER JOIN OITM i ON i.ItemCode = w.ItemCode
             INNER JOIN OWHS h ON h.WhsCode = w.WhsCode
             LEFT JOIN OITB b ON b.ItmsGrpCod = i.ItmsGrpCod
             WHERE i.validFor = 'Y'
-              AND (@Search IS NULL OR i.ItemCode LIKE @SearchLike OR i.ItemName LIKE @SearchLike)
+              AND (@Search IS NULL OR i.ItemCode LIKE @SearchLike OR i.ItemName LIKE @SearchLike OR {aroma} LIKE @SearchLike)
               AND (@Warehouse IS NULL OR w.WhsCode = @Warehouse)
               AND (@ItemGroup IS NULL OR b.ItmsGrpNam = @ItemGroup)";
 
@@ -413,7 +417,7 @@ public class SqlSapB1Service : ISapB1Service
 
         var selectSql = $@"
             SELECT
-                i.ItemCode, i.ItemName, ISNULL(b.ItmsGrpNam, '') AS ItemGroup,
+                i.ItemCode, {aroma} AS AromaCode, i.ItemName, ISNULL(b.ItmsGrpNam, '') AS ItemGroup,
                 w.WhsCode AS WarehouseCode, h.WhsName AS WarehouseName,
                 w.OnHand, w.IsCommited AS Committed, w.OnOrder AS Ordered,
                 (w.OnHand - w.IsCommited) AS Available,

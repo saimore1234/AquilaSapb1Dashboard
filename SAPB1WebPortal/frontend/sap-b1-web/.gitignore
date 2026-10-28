@@ -4,3 +4,29 @@ dist/
 .env.local
 
 .vercel
+
+# --- Mobile (Capacitor) ---
+# Signing material and local secrets must never be committed
+android/keystore.properties
+android/local.properties
+*.jks
+*.keystore
+*.p12
+*.mobileprovision
+*.cer
+.env.*
+!.env.example
+!.env.production.example
+!.env.staging.example
+android/app/google-services.json
+ios/App/GoogleService-Info.plist
+# Native build output
+android/app/build/
+android/build/
+android/.gradle/
+ios/App/Pods/
+ios/App/build/
+ios/DerivedData/
+android/app/src/main/assets/public
+ios/App/App/public
+!.env.development.example

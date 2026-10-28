@@ -61,6 +61,8 @@ public class WarehouseOptionDto
 // ------------------------------------------------------------------ Open Sales Orders (client line definition)
 public class OpenSalesOrderLineDto
 {
+    /// <summary>Item master user-defined field "Aroma Code" (OITM.U_AromaCode).</summary>
+    public string? AromaCode { get; set; }
     public int DocEntry { get; set; }
     public int DocNum { get; set; }
     public DateTime PostingDate { get; set; }
@@ -108,6 +110,7 @@ public class OpenSalesOrderReportDto
 // ------------------------------------------------------------------ Open Purchase Orders
 public class OpenPurchaseOrderLineDto
 {
+    public string? AromaCode { get; set; }
     public int DocEntry { get; set; }
     public int DocNum { get; set; }
     public DateTime PostingDate { get; set; }
@@ -137,6 +140,7 @@ public class OpenPurchaseOrderReportDto
 // ------------------------------------------------------------------ Sales Register (invoice lines minus credit-memo lines)
 public class SalesRegisterRowDto
 {
+    public string? AromaCode { get; set; }
     public string DocType { get; set; } = string.Empty;       // "A/R Invoice" | "A/R Credit Memo"
     public int DocEntry { get; set; }
     public int DocNum { get; set; }
@@ -337,6 +341,8 @@ public class PendingDeliveryReportDto
 // ------------------------------------------------------------------ Sales analysis (the dashboard charts, in full)
 public class SalesAnalysisRowDto
 {
+    /// <summary>Only filled for the item grouping.</summary>
+    public string? AromaCode { get; set; }
     public string Key { get; set; } = string.Empty;
     public string Name { get; set; } = string.Empty;
     public int Invoices { get; set; }

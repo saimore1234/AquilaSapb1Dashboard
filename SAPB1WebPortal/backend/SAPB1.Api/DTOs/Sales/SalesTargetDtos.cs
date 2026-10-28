@@ -174,6 +174,7 @@ public class SalespersonOptionDto
 
 public class SalesTargetItemOptionDto
 {
+    public string? AromaCode { get; set; }
     public string Code { get; set; } = string.Empty;
     public string Name { get; set; } = string.Empty;
     public string? Group { get; set; }

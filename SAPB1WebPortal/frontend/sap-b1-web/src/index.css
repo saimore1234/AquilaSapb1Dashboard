@@ -217,3 +217,29 @@ body {
     display: none;
   }
 }
+
+/* ------------------------------------------------------------------ Mobile
+   Touch-friendly sizing applies to any touch device (phones / tablets); the rules under `html.native` apply only inside the installed
+   Android / iOS app (NativeShell adds the class), so the desktop website is unchanged. */
+@media (pointer: coarse) {
+  .btn-compact, .btn-primary, .btn-secondary { min-height: 2.5rem; }
+  .ctl { min-height: 2.5rem; }
+}
+html.native {
+  -webkit-tap-highlight-color: transparent;
+  -webkit-touch-callout: none;
+  overscroll-behavior-y: none;
+}
+html.native, html.native body { overflow-x: hidden; }
+/* Android / iOS draw the page edge-to-edge (viewport-fit=cover): keep content clear of the status bar / notch, and paint that area navy. */
+html.native body { padding-top: env(safe-area-inset-top, 0px); }
+html.native body::before {
+  content: '';
+  position: fixed; top: 0; left: 0; right: 0; z-index: 100;
+  height: env(safe-area-inset-top, 0px);
+  background: #131f3a;
+}
+html.native header.sticky { top: env(safe-area-inset-top, 0px); }
+html.native .fixed.top-0 { top: env(safe-area-inset-top, 0px); }
+/* 16px inputs stop iOS from zooming the page when a field is focused. */
+html.native input, html.native select, html.native textarea { font-size: 16px; }

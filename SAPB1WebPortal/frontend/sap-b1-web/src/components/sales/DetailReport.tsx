@@ -11,6 +11,7 @@ import { dmy, taxLabel, useSalesFilters } from './salesFilters';
 import { useSalesRefresh } from './salesRefresh';
 import { downloadCsv } from './salesUtils';
 import { usePermissions } from '../../permissions/usePermissions';
+import AromaToggle, { useShowAroma } from './AromaToggle';
 
 export type FilterKey = 'warehouse' | 'unit' | 'branch' | 'salesperson' | 'customer' | 'customerGroup' | 'category' | 'item' | 'docType' | 'search' | 'newOnly' | 'allDates';
 
@@ -37,8 +38,8 @@ interface Props<T, R extends { rows: T[]; totalCount: number }> {
   columns: Col<T>[];
   filters: FilterKey[];
   rowKey: (row: T, index: number) => string;
-  /** Footer <tr> built from the report's totals (the totals come from the same filtered set as the rows). */
-  footer?: (report: R) => React.ReactNode;
+  /** Footer <tr> built from the report's totals (the totals come from the same filtered set as the rows). `ctx.aroma` is false when the Aroma Code column is hidden. */
+  footer?: (report: R, ctx: { aroma: boolean }) => React.ReactNode;
   /** The same footer for the CSV export. */
   footerCsv?: (report: R) => (string | number | null | undefined)[];
   /** One-line plain-text metric definition shown under the heading. */
@@ -57,7 +58,7 @@ interface Props<T, R extends { rows: T[]; totalCount: number }> {
  * export that uses exactly the same filters as the visible grid.
  */
 export default function DetailReport<T, R extends { rows: T[]; totalCount: number }>({
-  id, title, note, fetcher, columns, filters, rowKey, footer, footerCsv, definition, csvName, pageSize = 25, showTaxBasis = false, extra
+  id, title, note, fetcher, columns: allColumns, filters, rowKey, footer, footerCsv, definition, csvName, pageSize = 25, showTaxBasis = false, extra
 }: Props<T, R>) {
   const { canExport } = usePermissions();
   const { applied } = useSalesFilters();
@@ -70,6 +71,11 @@ export default function DetailReport<T, R extends { rows: T[]; totalCount: numbe
   const [reload, setReload] = useState(0);
   const [notice, setNotice] = useState<string | null>(null);
   const seenTick = useRef(tick);
+  // The Aroma Code column follows the shared tick box; the CSV and the footer follow the visible columns.
+  const showAroma = useShowAroma();
+  const aromaIdx = allColumns.findIndex((c) => c.key === 'aroma');
+  const hasAroma = aromaIdx >= 0;
+  const columns = hasAroma && !showAroma ? allColumns.filter((c) => c.key !== 'aroma') : allColumns;
 
   // The four shared dimensions come from the global filter unless this report was opened (or changed) with its own value.
   // In the URL, '*' means an explicit "All" for that report.
@@ -155,7 +161,11 @@ export default function DetailReport<T, R extends { rows: T[]; totalCount: numbe
       const active = (Object.keys(FILTER_PARAMS) as FilterKey[]).filter((k) => filters.includes(k) && get(k)).map((k) => `${k}=${get(k)}`).join('; ');
       const pre = [[`Report: ${title}`], [`Period: ${dmy(dateOverride.from)} to ${dmy(dateOverride.to)}`], [`Filters: ${active || 'none'}`], []];
       const rows: (string | number | null | undefined)[][] = all.rows.map((r) => columns.map((c) => c.csv(r)));
-      if (footerCsv) rows.push(footerCsv(all));
+      if (footerCsv) {
+        const f = footerCsv(all);
+        if (hasAroma && !showAroma) f.splice(aromaIdx, 1); // footerCsv is written for the full column list
+        rows.push(f);
+      }
       downloadCsv(`${csvName}-${dateOverride.from}-to-${dateOverride.to}.csv`, columns.map((c) => c.header), rows, pre);
       if (all.totalCount > 5000) setNotice(`Exported the first 5,000 of ${all.totalCount.toLocaleString('en-IN')} rows — narrow the filters for the rest.`);
     } catch (err) {
@@ -244,9 +254,10 @@ export default function DetailReport<T, R extends { rows: T[]; totalCount: numbe
           </label>
         )}
         {has('item') && (
-          <div className="grow min-w-[10rem]"><label className="block text-xs text-ink-secondary mb-1">Item code or description</label>
-            <input className={`${sel} w-full`} placeholder="Search items" value={itemText} onChange={(e) => setItemText(e.target.value)} /></div>
+          <div className="grow min-w-[10rem]"><label className="block text-xs text-ink-secondary mb-1">Item code, name or Aroma code</label>
+            <input className={`${sel} w-full`} placeholder="Item code, name or Aroma code" value={itemText} onChange={(e) => setItemText(e.target.value)} /></div>
         )}
+        {hasAroma && <AromaToggle />}
         {canExport && (
           <button className="btn-secondary ml-auto" onClick={exportCsv} disabled={!data || data.totalCount === 0}>
             <Download className="h-4 w-4" /> Download CSV
@@ -283,7 +294,7 @@ export default function DetailReport<T, R extends { rows: T[]; totalCount: numbe
                   ))
                 )}
               </tbody>
-              {!loading && data && data.rows.length > 0 && footer && <tfoot>{footer(data)}</tfoot>}
+              {!loading && data && data.rows.length > 0 && footer && <tfoot>{footer(data, { aroma: showAroma || !hasAroma })}</tfoot>}
             </table>
           </div>
           {data && data.totalCount > 0 && (

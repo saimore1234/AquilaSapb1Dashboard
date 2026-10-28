@@ -59,7 +59,7 @@ export default function ProductionOrders() {
       keyField={(r) => String(r.docEntry)}
       routeBase="/production/orders"
       docEntryField={(r) => r.docEntry}
-      searchPlaceholder="Production order #, item code, item name…"
+      searchPlaceholder="Production order #, item code, item name, Aroma code…"
       filterFields={['date', 'status', 'item', 'warehouse']}
       emptyMessage="No production orders found."
       renderMobileCard={(r) => {

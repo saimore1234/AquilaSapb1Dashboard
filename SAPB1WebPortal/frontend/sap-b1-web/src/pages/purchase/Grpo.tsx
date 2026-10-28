@@ -39,7 +39,7 @@ export default function Grpo() {
       keyField={(r) => String(r.docEntry)}
       docEntryField={(r) => r.docEntry}
       routeBase="/purchase/grpo"
-      searchPlaceholder="GRPO #, vendor…"
+      searchPlaceholder="GRPO #, vendor, item or Aroma code…"
       filterFields={['date', 'vendor', 'status']}
       emptyMessage="No goods receipts found."
       renderMobileCard={(r) => (

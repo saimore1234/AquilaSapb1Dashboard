@@ -41,7 +41,7 @@ export default function SalesQuotations() {
       keyField={(r) => String(r.docEntry)}
       docEntryField={(r) => r.docEntry}
       routeBase="/sales/quotations"
-      searchPlaceholder="Quotation #, customer code, customer name…"
+      searchPlaceholder="Quotation #, customer code, customer name, item or Aroma code…"
       filterFields={['date', 'customer', 'status', 'salesEmployee', 'warehouse']}
       emptyMessage="No sales quotations found."
       renderMobileCard={(r) => (

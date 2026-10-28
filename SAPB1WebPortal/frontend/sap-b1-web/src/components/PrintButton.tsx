@@ -2,6 +2,8 @@ import { useEffect, useRef, useState } from 'react';
 import { Loader2, Printer, AlertCircle, ChevronDown, Check } from 'lucide-react';
 import { fetchPrintLayouts, fetchPrintPdf, PrintError, type PrintDocumentType, type PrintLayout } from '../api/print';
 import { useClickOutside } from '../hooks/useClickOutside';
+import { isNative } from '../native/platform';
+import { shareFile } from '../native/files';
 
 /**
  * Print → pick one of the Crystal layouts SAP Business One holds for this
@@ -47,9 +49,15 @@ export default function PrintButton({ documentType, docEntry }: { documentType: 
     setLastCode(layout.code);
     setError(null);
     // Open the tab synchronously inside the click so popup blockers allow it.
-    const tab = window.open('', '_blank');
+    const tab = isNative ? null : window.open('', '_blank');
     try {
       const blob = await fetchPrintPdf(documentType, docEntry, layout.code);
+      if (isNative) {
+        // The app has no browser tabs: share / open the PDF through the system share sheet.
+        await shareFile(`${documentType}-${docEntry}.pdf`, blob, 'Document');
+        setOpen(false);
+        return;
+      }
       const url = URL.createObjectURL(blob);
       if (tab) tab.location.href = url;
       else window.location.href = url;

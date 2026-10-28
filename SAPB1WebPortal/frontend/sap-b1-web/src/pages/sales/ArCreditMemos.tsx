@@ -39,7 +39,7 @@ export default function ArCreditMemos() {
       keyField={(r) => String(r.docEntry)}
       docEntryField={(r) => r.docEntry}
       routeBase="/sales/credit-memos"
-      searchPlaceholder="Credit memo #, customer code, customer name…"
+      searchPlaceholder="Credit memo #, customer code, customer name, item or Aroma code…"
       filterFields={['date', 'customer', 'status']}
       emptyMessage="No A/R credit memos found."
       renderMobileCard={(r) => (

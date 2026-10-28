@@ -19,14 +19,16 @@ public partial class SqlSalesPerformanceService : ISalesPerformanceService
     private readonly ICompanyContext _company;
     private readonly IConfiguration _config;
     private readonly ISalesDetailReportsService _detail;
+    private readonly ISalesScope _scope;
 
-    public SqlSalesPerformanceService(ICompanyConnectionFactory sap, IPortalConnectionFactory portal, ICompanyContext company, IConfiguration config, ISalesDetailReportsService detail)
+    public SqlSalesPerformanceService(ICompanyConnectionFactory sap, IPortalConnectionFactory portal, ICompanyContext company, IConfiguration config, ISalesDetailReportsService detail, ISalesScope scope)
     {
         _sap = sap;
         _portal = portal;
         _company = company;
         _config = config;
         _detail = detail;
+        _scope = scope;
     }
 
     private class UnitConfig { public string Label { get; set; } = ""; public string? Location { get; set; } public string? Branch { get; set; } }
@@ -121,21 +123,30 @@ public partial class SqlSalesPerformanceService : ISalesPerformanceService
             var scopeSel = scopeCol ? "Scope" : "'Salesperson' AS Scope";
             trows = (await pdb.QueryAsync<TargetRow>(new CommandDefinition($@"
                 SELECT {scopeSel}, SapSlpCode, UnitCode, TargetAmount AS Amt, PeriodStartDate AS S, PeriodEndDate AS E FROM dbo.SalespersonTargets
-                WHERE CompanyCode = @Company AND Status = 'Approved' AND PeriodStartDate >= @From AND PeriodEndDate <= @To",
+                WHERE CompanyCode = @Company AND Status = 'Approved' AND PeriodEndDate >= @From AND PeriodStartDate <= @To",
                 new { Company = _company.CompanyCode, From = from, To = to }, cancellationToken: ct))).ToList();
-            partial = await pdb.ExecuteScalarAsync<int>(new CommandDefinition(@"
-                SELECT COUNT(*) FROM dbo.SalespersonTargets
-                WHERE CompanyCode = @Company AND Status = 'Approved' AND PeriodEndDate >= @From AND PeriodStartDate <= @To
-                  AND NOT (PeriodStartDate >= @From AND PeriodEndDate <= @To)",
-                new { Company = _company.CompanyCode, From = from, To = to }, cancellationToken: ct));
         }
         catch (SqlException)
         {
             targetsAvailable = false;
         }
+        // A salesperson login only ever sees its own salesperson targets — company / unit / other people's targets are dropped before anything is counted.
+        if (_scope.Current.Restricted) trows = trows.Where(r => r.Scope == "Salesperson" && _scope.Current.SlpCodes.Contains(r.SapSlpCode)).ToList();
         // The same owner may have a monthly and an annual target for overlapping dates (older data): keep only the coarsest so nothing is counted twice.
         trows = trows.Where(r => !trows.Any(o => !ReferenceEquals(o, r) && o.Scope == r.Scope && o.SapSlpCode == r.SapSlpCode && o.UnitCode == r.UnitCode
                                                  && o.S <= r.S && o.E >= r.E && (o.S < r.S || o.E > r.E))).ToList();
+
+        // Any approved target that OVERLAPS the selected dates counts. A target wholly inside the selection counts in full; one that is longer than the
+        // selection (e.g. an annual target when a month is selected) or only partly inside it counts pro rata by calendar day:
+        //   amount x (days of the target inside the selection) / (days in the target's whole period).
+        foreach (var r in trows)
+        {
+            var overlapStart = r.S.Date > from ? r.S.Date : from;
+            var overlapEnd = r.E.Date < to ? r.E.Date : to;
+            var overlapDays = (overlapEnd - overlapStart).Days + 1;
+            var periodDays = (r.E.Date - r.S.Date).Days + 1;
+            if (overlapDays < periodDays && periodDays > 0) { r.Amt = Math.Round(r.Amt * overlapDays / periodDays, 2); partial++; }
+        }
 
         // One level per question, never added together: salesperson selected -> that person's targets; a unit -> the unit's own target (else the sum of
         // its salespersons' targets); all units -> the company target (else the unit targets, else all salesperson targets).
@@ -144,11 +155,15 @@ public partial class SqlSalesPerformanceService : ISalesPerformanceService
             var l = rows.ToList();
             return l.Count == 0 ? null : new TargetPick(l.Sum(r => r.Amt), l.Count, level);
         }
+        var scopeNow = _scope.Current;
+        IEnumerable<TargetRow> Mine(int? slp) => trows.Where(r => r.Scope == "Salesperson" && scopeNow.SlpCodes.Contains(r.SapSlpCode) && (slp is null || r.SapSlpCode == slp));
         TargetPick? TargetForUnit(int unit, int? slp) =>
+            scopeNow.Restricted ? PickOf(Mine(slp).Where(r => r.UnitCode == unit), "Your salesperson targets") :
             slp is int sp ? PickOf(trows.Where(r => r.Scope == "Salesperson" && r.SapSlpCode == sp && r.UnitCode == unit), "Salesperson targets")
                           : PickOf(trows.Where(r => r.Scope == "Unit" && r.UnitCode == unit), "Unit target")
                             ?? PickOf(trows.Where(r => r.Scope == "Salesperson" && r.UnitCode == unit), "Salesperson targets");
         TargetPick? TargetForAll(int? slp) =>
+            scopeNow.Restricted ? PickOf(Mine(slp), "Your salesperson targets") :
             slp is int sp ? PickOf(trows.Where(r => r.Scope == "Salesperson" && r.SapSlpCode == sp), "Salesperson targets")
                           : PickOf(trows.Where(r => r.Scope == "Company"), "Company target")
                             ?? PickOf(trows.Where(r => r.Scope == "Unit"), "Unit targets")
@@ -224,7 +239,8 @@ public partial class SqlSalesPerformanceService : ISalesPerformanceService
             dto.OutstandingNote = outstandingNote;
         }
 
-        dto.PartialTargetsExcluded = partial;
+        dto.PartialTargetsExcluded = 0;
+        dto.ProRatedTargets = partial;
         dto.TargetConfigured = dto.Target is > 0;
         if (dto.TargetConfigured)
         {
@@ -242,10 +258,10 @@ public partial class SqlSalesPerformanceService : ISalesPerformanceService
             ? "Targets are unavailable (the targets database could not be read)."
             : q.CustomerGroup is not null || category is not null
                 ? "Targets are set per company, unit, salesperson and period, so no target applies to a customer-group or product-category selection."
-                : (targetLevel is null ? "No approved target whose whole period falls between " : (targetLevel + ": approved target(s) whose whole period falls between "))
+                : (targetLevel is null ? "No approved target whose whole period falls between " : (targetLevel + ": approved target(s) overlapping "))
                   + $"{from:dd MMM yyyy} and {to:dd MMM yyyy}"
                   + (q.Salesperson is not null ? ", for the selected salesperson" : q.Unit is null ? " (company-wide)" : " for this unit")
-                  + (partial > 0 ? $". {partial} approved target(s) only partly overlap these dates and are excluded." : ".")
+                  + (partial > 0 ? $". {partial} target(s) cover a longer period than the selected dates, so they are counted pro rata by day (selected days ÷ target period days)." : ".")
                   + taxNote;
         return dto;
     }

@@ -1,6 +1,8 @@
 import React, { createContext, useContext, useEffect, useState } from 'react';
 import { login as loginApi, logout as logoutApi, getMe } from '../api/auth';
 import { buildAccess, canAccessPath, emptyAccess, hasPermission as evaluate, type AccessSnapshot } from '../permissions/evaluate';
+import { session } from '../native/session';
+import type { SalesScope } from '../types';
 
 interface AuthUser {
   username: string;
@@ -25,6 +27,8 @@ interface AuthContextValue {
   /// Central permission service — every UI permission check goes through these.
   /// Backed by the same rules the server enforces (see permissions/evaluate.ts).
   access: AccessSnapshot;
+  /// Which SAP salespersons this login is limited to (null for unrestricted logins). Informational — the server enforces it.
+  salesScope: SalesScope | null;
   hasPermission: (moduleKey: string, pageKey: string | null | undefined, action: string) => boolean;
   canView: (moduleKey: string, pageKey?: string | null) => boolean;
   canCreate: (moduleKey: string, pageKey?: string | null) => boolean;
@@ -48,22 +52,25 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   const [user, setUser] = useState<AuthUser | null>(null);
   const [isLoading, setIsLoading] = useState(true);
   const [access, setAccess] = useState<AccessSnapshot>(emptyAccess());
+  const [salesScope, setSalesScope] = useState<SalesScope | null>(null);
 
   async function loadPermissions() {
     try {
       const me = await getMe();
       setAccess(buildAccess(me.isSuperUser, me.permissions, me.pageRules ?? {}));
+      setSalesScope(me.salesScope ?? null);
     } catch {
       // Non-fatal — can() just returns false for everything until a retry
       // (e.g. next login) succeeds; the backend still enforces independently.
       setAccess(emptyAccess());
+      setSalesScope(null);
     }
   }
 
   useEffect(() => {
     (async () => {
-      const storedUser = localStorage.getItem(USER_KEY);
-      const storedToken = localStorage.getItem(TOKEN_KEY);
+      const storedUser = session.get(USER_KEY);
+      const storedToken = session.get(TOKEN_KEY);
       if (storedUser && storedToken) {
         setUser(JSON.parse(storedUser));
         await loadPermissions();
@@ -74,14 +81,14 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
 
   async function login(companyDb: string, username: string, password: string) {
     const response = await loginApi(companyDb, username, password);
-    localStorage.setItem(TOKEN_KEY, response.token);
+    session.set(TOKEN_KEY, response.token);
     const authUser: AuthUser = {
       username: response.username,
       role: response.role,
       company: response.company,
       companyName: response.companyName
     };
-    localStorage.setItem(USER_KEY, JSON.stringify(authUser));
+    session.set(USER_KEY, JSON.stringify(authUser));
     // Permissions first, so route guards never see an authenticated user with an empty set.
     await loadPermissions();
     setUser(authUser);
@@ -97,10 +104,11 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     } catch {
       // Intentionally ignored — see comment above.
     } finally {
-      localStorage.removeItem(TOKEN_KEY);
-      localStorage.removeItem(USER_KEY);
+      session.remove(TOKEN_KEY);
+      session.remove(USER_KEY);
       setUser(null);
       setAccess(emptyAccess());
+      setSalesScope(null);
     }
   }
 
@@ -131,6 +139,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
         hasRole,
         can,
         access,
+        salesScope,
         hasPermission,
         canView: forAction('View'),
         canCreate: forAction('Create'),

@@ -52,7 +52,7 @@ export default function ArInvoices() {
       keyField={(r) => String(r.docEntry)}
       docEntryField={(r) => r.docEntry}
       routeBase="/sales/invoices"
-      searchPlaceholder="Invoice #, customer code, customer name…"
+      searchPlaceholder="Invoice #, customer code, customer name, item or Aroma code…"
       filterFields={['date', 'customer', 'status', 'salesEmployee', 'warehouse']}
       emptyMessage="No A/R invoices found."
       renderMobileCard={(r) => (

@@ -36,7 +36,11 @@ public interface ICompanyContext
 /// or SQL text.</summary>
 public interface ICompanyConnectionFactory
 {
+    /// <summary>The normal connection. For a salesperson-RESTRICTED login every sales-document query it runs is limited to that login's salespersons.</summary>
     IDbConnection CreateConnection();
+
+    /// <summary>A plain SqlConnection with no salesperson filtering. Only for code that has ALREADY verified the caller may access the specific document (printing).</summary>
+    IDbConnection CreateUnscopedConnection();
 }
 
 /// <summary>Verifies an SAP B1 username/password against the real SAP Business

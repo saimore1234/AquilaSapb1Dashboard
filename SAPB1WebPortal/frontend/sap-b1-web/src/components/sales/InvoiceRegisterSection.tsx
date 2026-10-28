@@ -9,10 +9,12 @@ import { downloadCsv } from './salesUtils';
 import { taxLabel, useSalesFilters } from './salesFilters';
 import { useSalesRefresh } from './salesRefresh';
 import { usePermissions } from '../../permissions/usePermissions';
+import AromaToggle, { useShowAroma } from './AromaToggle';
 
 /** A/R invoices for a period, with search, dispatch filter and CSV export. */
 export default function InvoiceRegisterSection({ reportTo, pageSize = 7 }: { reportTo?: string; pageSize?: number }) {
   const { canExport } = usePermissions();
+  const showAroma = useShowAroma();
   const { applied } = useSalesFilters();
   const { from, to, includeTax } = applied;
   const [dispatch, setDispatch] = useState<'all' | 'delivery' | 'direct'>('all');
@@ -56,8 +58,8 @@ export default function InvoiceRegisterSection({ reportTo, pageSize = 7 }: { rep
     const all = await getInvoiceRegister({ dateFrom: from, dateTo: to, includeTax, dispatch, search: query || undefined, page: 1, pageSize: 5000 });
     downloadCsv(
       `invoice-register-${from}-to-${to}-${includeTax ? 'incl' : 'excl'}-tax.csv`,
-      ['Invoice No', 'Date', 'Customer Code', 'Customer', 'Item', 'Quantity', 'Rate', `Value (${taxLabel(includeTax)})`, 'Dispatch Status'],
-      all.rows.map((r) => [r.docNum, r.docDate.slice(0, 10), r.customerCode, r.customerName, r.item, r.quantity, r.rate, r.value, r.dispatchStatus])
+      ['Invoice No', 'Date', 'Customer Code', 'Customer', 'Item', 'Quantity', 'Rate', `Value (${taxLabel(includeTax)})`, 'Dispatch Status', 'LR No', 'LR Date', 'Transporter', 'Order Date', 'No. of Days (order to invoice)', ...(showAroma ? ['Aroma Code'] : [])],
+      all.rows.map((r) => [r.docNum, r.docDate.slice(0, 10), r.customerCode, r.customerName, r.item, r.quantity, r.rate, r.value, r.dispatchStatus, r.lrNo, r.lrDate?.slice(0, 10), r.transporter, r.orderDate?.slice(0, 10), r.daysOrderToInvoice, ...(showAroma ? [r.aromaCode] : [])])
     );
   }
 
@@ -75,8 +77,9 @@ export default function InvoiceRegisterSection({ reportTo, pageSize = 7 }: { rep
           </select>
           <div className="relative ml-auto">
             <Search className="h-4 w-4 absolute left-2.5 top-1/2 -translate-y-1/2 text-ink-tertiary" />
-            <input value={search} onChange={(e) => setSearch(e.target.value)} placeholder="Invoice no. or customer" aria-label="Search invoices" className={`${input} pl-8 w-56`} />
+            <input value={search} onChange={(e) => setSearch(e.target.value)} placeholder="Invoice no., customer, item or Aroma code" aria-label="Search invoices" className={`${input} pl-8 w-56`} />
           </div>
+          <AromaToggle />
           {canExport && (
             <button className="btn-secondary" onClick={exportCsv} disabled={!data || data.totalCount === 0}>
               <Download className="h-4 w-4" /> Download CSV
@@ -93,38 +96,48 @@ export default function InvoiceRegisterSection({ reportTo, pageSize = 7 }: { rep
                 <tr className="text-left text-xs uppercase tracking-wide text-ink-tertiary border-b border-border">
                   <th className="px-4 py-2.5 font-medium">Invoice No.</th>
                   <th className="px-4 py-2.5 font-medium">Date</th>
+                  <th className="px-4 py-2.5 font-medium text-right" title="Days from the sales order date to the invoice date">No. of Days</th>
                   <th className="px-4 py-2.5 font-medium">Customer</th>
                   <th className="px-4 py-2.5 font-medium">Item</th>
+                  {showAroma && <th className="px-4 py-2.5 font-medium">Aroma Code</th>}
                   <th className="px-4 py-2.5 font-medium text-right">Qty</th>
                   <th className="px-4 py-2.5 font-medium text-right">Rate</th>
                   <th className="px-4 py-2.5 font-medium text-right">Value ({taxLabel(includeTax)})</th>
                   <th className="px-4 py-2.5 font-medium">Dispatch</th>
+                  <th className="px-4 py-2.5 font-medium">LR No.</th>
+                  <th className="px-4 py-2.5 font-medium">LR Date</th>
+                  <th className="px-4 py-2.5 font-medium">Transporter</th>
                 </tr>
               </thead>
               <tbody>
                 {loading
                   ? Array.from({ length: 5 }).map((_, i) => (
                       <tr key={i} className="border-b border-border last:border-0">
-                        <td colSpan={8} className="px-4 py-3"><Skeleton className="h-4 w-full" /></td>
+                        <td colSpan={showAroma ? 13 : 12} className="px-4 py-3"><Skeleton className="h-4 w-full" /></td>
                       </tr>
                     ))
                   : data?.rows.map((r) => (
                       <tr key={r.docEntry} className="border-b border-border last:border-0 hover:bg-surface-tertiary/60">
                         <td className="px-4 py-3 font-medium text-brand-600 dark:text-brand-400 whitespace-nowrap">INV/{r.docNum}</td>
                         <td className="px-4 py-3 whitespace-nowrap">{formatDate(r.docDate)}</td>
+                        <td className="px-4 py-3 text-right tabular-nums" title={r.orderDate ? `Order date ${formatDate(r.orderDate)}` : 'No linked sales order'}>{r.daysOrderToInvoice ?? '—'}</td>
                         <td className="px-4 py-3 text-ink-primary">{r.customerName ?? r.customerCode}</td>
                         <td className="px-4 py-3">
                           {r.item ?? '—'}
                           {r.lineCount > 1 && <span className="text-xs text-ink-tertiary"> +{r.lineCount - 1} more</span>}
                         </td>
+                        {showAroma && <td className="px-4 py-3 whitespace-nowrap">{r.aromaCode ?? '—'}</td>}
                         <td className="px-4 py-3 text-right tabular-nums">{num.format(r.quantity)} <span className="text-xs text-ink-tertiary">{r.uom ?? ''}</span></td>
                         <td className="px-4 py-3 text-right tabular-nums">{r.lineCount > 1 ? 'avg ' : ''}{inr.format(r.rate)}</td>
                         <td className="px-4 py-3 text-right tabular-nums font-medium">{inr.format(r.value)}</td>
                         <td className="px-4 py-3"><StatusPill text={r.dispatchStatus} /></td>
+                        <td className="px-4 py-3 whitespace-nowrap">{r.lrNo ?? '—'}</td>
+                        <td className="px-4 py-3 whitespace-nowrap">{r.lrDate ? formatDate(r.lrDate) : '—'}</td>
+                        <td className="px-4 py-3">{r.transporter ?? '—'}</td>
                       </tr>
                     ))}
                 {!loading && data?.rows.length === 0 && (
-                  <tr><td colSpan={8} className="px-4 py-10 text-center text-ink-tertiary">No invoices match.</td></tr>
+                  <tr><td colSpan={showAroma ? 13 : 12} className="px-4 py-10 text-center text-ink-tertiary">No invoices match.</td></tr>
                 )}
               </tbody>
             </table>

@@ -2,6 +2,7 @@ namespace SAPB1.Api.DTOs.Items;
 
 public class ItemListItemDto
 {
+    public string? AromaCode { get; set; }
     public string ItemCode { get; set; } = string.Empty;
     public string ItemName { get; set; } = string.Empty;
     public string? ItemGroup { get; set; }

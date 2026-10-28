@@ -15,6 +15,8 @@ public class InvoiceRegisterQuery
 
 public class InvoiceRegisterRowDto
 {
+    /// <summary>Aroma Code (item master UDF) of the first line's item — the same item the Item column shows.</summary>
+    public string? AromaCode { get; set; }
     public int DocEntry { get; set; }
     public int DocNum { get; set; }
     public DateTime DocDate { get; set; }
@@ -31,6 +33,12 @@ public class InvoiceRegisterRowDto
     /// <summary>"Against Delivery" when any line was created from a delivery, otherwise "Direct Invoice".</summary>
     public string DispatchStatus { get; set; } = string.Empty;
     public string Status { get; set; } = string.Empty;
+    public string? LrNo { get; set; }
+    public DateTime? LrDate { get; set; }
+    public string? Transporter { get; set; }
+    public DateTime? OrderDate { get; set; }
+    /// <summary>Days from the (first linked) sales order date to the invoice date; null without a linked sales order.</summary>
+    public int? DaysOrderToInvoice { get; set; }
 }
 
 public class InvoiceRegisterDto
@@ -57,6 +65,8 @@ public class CustomerAgeingRowDto
     public decimal Days61To90 { get; set; }
     public decimal Days90Plus { get; set; }
     public decimal Total { get; set; }
+    /// <summary>Days from the due date of the customer's OLDEST unpaid invoice to today (negative = nothing is due yet).</summary>
+    public int? OverdueDays { get; set; }
     /// <summary>Low | Watch | High — High when 25%+ of the balance is older than 60 days.</summary>
     public string Risk { get; set; } = "Low";
 }

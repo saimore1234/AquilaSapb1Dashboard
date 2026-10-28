@@ -41,7 +41,7 @@ export default function Deliveries() {
       keyField={(r) => String(r.docEntry)}
       docEntryField={(r) => r.docEntry}
       routeBase="/sales/deliveries"
-      searchPlaceholder="Delivery #, customer code, customer name…"
+      searchPlaceholder="Delivery #, customer code, customer name, item or Aroma code…"
       filterFields={['date', 'customer', 'status', 'salesEmployee', 'warehouse']}
       emptyMessage="No deliveries found."
       renderMobileCard={(r) => (
