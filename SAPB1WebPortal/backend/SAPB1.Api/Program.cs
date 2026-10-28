@@ -46,6 +46,8 @@ builder.Services.Configure<CompanyDatabaseOptions>(builder.Configuration.GetSect
 
 builder.Services.AddHttpContextAccessor();
 builder.Services.AddMemoryCache();
+builder.Services.AddSingleton<LoginAttemptTracker>();
+builder.Services.AddScoped<ISecurityService, SecurityService>();
 
 // ---------------------------------------------------------------
 // Dependency injection
@@ -275,6 +277,7 @@ app.UseForwardedHeaders(new ForwardedHeadersOptions
 app.UseHttpsRedirection();
 app.UseCors("FrontendPolicy");
 app.UseAuthentication();
+app.UseMiddleware<MustChangePasswordMiddleware>();
 app.UseAuthorization();
 app.UseSerilogRequestLogging();
 

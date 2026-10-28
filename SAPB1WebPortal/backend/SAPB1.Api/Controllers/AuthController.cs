@@ -8,6 +8,7 @@ using SAPB1.Api.DTOs.Auth;
 using SAPB1.Api.DTOs.Common;
 using SAPB1.Api.Interfaces;
 using SAPB1.Api.Models;
+using SAPB1.Api.Services;
 
 namespace SAPB1.Api.Controllers;
 
@@ -20,6 +21,8 @@ public class AuthController : ControllerBase
     private readonly ICompanyRegistry _companyRegistry;
     private readonly ITokenRevocationStore _revocationStore;
     private readonly IAdminService _adminService;
+    private readonly ISecurityService _security;
+    private readonly LoginAttemptTracker _attempts;
     private readonly ILogger<AuthController> _logger;
 
     public AuthController(
@@ -28,8 +31,12 @@ public class AuthController : ControllerBase
         ICompanyRegistry companyRegistry,
         ITokenRevocationStore revocationStore,
         IAdminService adminService,
+        ISecurityService security,
+        LoginAttemptTracker attempts,
         ILogger<AuthController> logger)
     {
+        _security = security;
+        _attempts = attempts;
         _authService = authService;
         _tokenService = tokenService;
         _companyRegistry = companyRegistry;
@@ -70,12 +77,25 @@ public class AuthController : ControllerBase
         if (!ModelState.IsValid)
             return BadRequest(ApiResponse<LoginResponseDto>.Fail("Company, username and password are required."));
 
+        var locked = _attempts.MinutesLocked(request.Username);
+        if (locked > 0)
+        {
+            await _security.AuditAsync("LoginBlocked", request.Username, null, $"Account locked; {locked} min left", false);
+            return StatusCode(StatusCodes.Status429TooManyRequests,
+                ApiResponse<LoginResponseDto>.Fail($"Too many failed sign-in attempts. Try again in {locked} minute(s)."));
+        }
+
         var (success, user) = await _authService.ValidateCredentialsAsync(request.CompanyDb, request.Username, request.Password, ct);
         if (!success || user is null)
         {
+            var nowLocked = _attempts.RecordFailure(request.Username);
+            await _security.AuditAsync("LoginFailed", request.Username, null, request.CompanyDb, false);
+            if (nowLocked) await _security.AuditAsync("AccountLocked", request.Username, null, "Too many failed sign-in attempts", false);
             // Intentionally generic — do not reveal whether the company or username exists.
             return Unauthorized(ApiResponse<LoginResponseDto>.Fail("Invalid company, username or password."));
         }
+        _attempts.RecordSuccess(request.Username);
+        await _security.AuditAsync("Login", user.Username, null, user.CompanyCode);
 
         var (token, expiresAtUtc) = _tokenService.GenerateToken(user);
 
@@ -87,10 +107,62 @@ public class AuthController : ControllerBase
             CompanyName = user.CompanyName,
             Role = user.Role,
             ExpiresAtUtc = expiresAtUtc,
-            ExpiresIn = Math.Max(0, (int)(expiresAtUtc - DateTime.UtcNow).TotalSeconds)
+            ExpiresIn = Math.Max(0, (int)(expiresAtUtc - DateTime.UtcNow).TotalSeconds),
+            MustChangePassword = user.MustChangePassword
         };
 
         return Ok(ApiResponse<LoginResponseDto>.Ok(response, "Login successful."));
+    }
+
+    /// <summary>
+    /// POST /api/auth/change-password — the signed-in user sets a new password (current password required). Works for accounts flagged to change a
+    /// temporary password too. Returns a fresh token (without the "must change" restriction); the old one is revoked.
+    /// </summary>
+    [HttpPost("change-password")]
+    [Authorize]
+    public async Task<ActionResult<ApiResponse<LoginResponseDto>>> ChangePassword([FromBody] ChangePasswordRequestDto request, CancellationToken ct)
+    {
+        var username = User.Identity?.Name ?? "";
+        if (!int.TryParse(User.FindFirstValue("userId"), out var userId))
+            return BadRequest(ApiResponse<LoginResponseDto>.Fail("This account's password is managed in the server configuration."));
+
+        if (_attempts.MinutesLocked(username) > 0)
+            return StatusCode(StatusCodes.Status429TooManyRequests, ApiResponse<LoginResponseDto>.Fail("Too many failed attempts. Try again later."));
+
+        var record = await _adminService.GetUserByUsernameAsync(username, ct);
+        if (record is null || !record.IsActive || !PasswordHasher.Verify(request.CurrentPassword ?? "", record.PasswordHash))
+        {
+            _attempts.RecordFailure(username);
+            await _security.AuditAsync("PasswordChangeFailed", username, null, "Wrong current password", false);
+            return BadRequest(ApiResponse<LoginResponseDto>.Fail("Your current password is not correct."));
+        }
+
+        var problem = PasswordPolicy.Validate(request.NewPassword, username);
+        if (problem is not null) return BadRequest(ApiResponse<LoginResponseDto>.Fail(problem));
+        if (request.NewPassword == request.CurrentPassword) return BadRequest(ApiResponse<LoginResponseDto>.Fail("The new password must be different from the current one."));
+
+        await _security.SetPasswordAsync(userId, PasswordHasher.HashPassword(request.NewPassword!), false, ct);
+        _attempts.RecordSuccess(username);
+        await _security.AuditAsync("PasswordChanged", username, username);
+
+        var jti = User.FindFirstValue(JwtRegisteredClaimNames.Jti);
+        if (!string.IsNullOrEmpty(jti) && long.TryParse(User.FindFirstValue(JwtRegisteredClaimNames.Exp), out var exp))
+            _revocationStore.Revoke(jti, DateTimeOffset.FromUnixTimeSeconds(exp).UtcDateTime);
+
+        var fresh = new AuthenticatedUser
+        {
+            Username = record.Username,
+            CompanyCode = User.FindFirstValue(AppClaimTypes.CompanyDb) ?? "",
+            CompanyName = User.FindFirstValue(AppClaimTypes.CompanyName) ?? "",
+            Role = record.RoleName ?? "",
+            UserId = userId
+        };
+        var (token, expiresAtUtc) = _tokenService.GenerateToken(fresh);
+        return Ok(ApiResponse<LoginResponseDto>.Ok(new LoginResponseDto
+        {
+            Token = token, Username = fresh.Username, Company = fresh.CompanyCode, CompanyName = fresh.CompanyName, Role = fresh.Role,
+            ExpiresAtUtc = expiresAtUtc, ExpiresIn = Math.Max(0, (int)(expiresAtUtc - DateTime.UtcNow).TotalSeconds)
+        }, "Password changed."));
     }
 
     /// <summary>
@@ -137,6 +209,7 @@ public class AuthController : ControllerBase
             Company = User.FindFirstValue(AppClaimTypes.CompanyDb) ?? string.Empty,
             CompanyName = User.FindFirstValue(AppClaimTypes.CompanyName) ?? string.Empty,
             IsSuperUser = access.IsFullAccess,
+            MustChangePassword = User.HasClaim(AppClaimTypes.MustChangePassword, "1"),
             Permissions = access.ModuleKeys.ToList(),
             PageRules = access.PageRules.ToDictionary(kv => kv.Key, kv => kv.Value)
         };

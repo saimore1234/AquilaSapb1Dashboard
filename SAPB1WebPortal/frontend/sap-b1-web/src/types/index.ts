@@ -21,6 +21,8 @@ export interface LoginResponse {
   company: string;
   companyName: string;
   role: string;
+  /** true = the account still has a temporary password and must set a new one first. */
+  mustChangePassword?: boolean;
 }
 
 export interface CompanyOption {
@@ -279,6 +281,7 @@ export interface Warehouse {
 // ---------------------------------------------------------------
 
 export interface CurrentUser {
+  mustChangePassword?: boolean;
   username: string;
   role: string;
   company: string;

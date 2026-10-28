@@ -14,6 +14,12 @@ public class LoginRequestDto
     public string Password { get; set; } = string.Empty;
 }
 
+public class ChangePasswordRequestDto
+{
+    public string? CurrentPassword { get; set; }
+    public string? NewPassword { get; set; }
+}
+
 public class LoginResponseDto
 {
     public string Token { get; set; } = string.Empty;
@@ -26,6 +32,8 @@ public class LoginResponseDto
     public string Role { get; set; } = string.Empty;
     public int ExpiresIn { get; set; } // seconds until expiry
     public DateTime ExpiresAtUtc { get; set; }
+    /// <summary>true = the user must set a new password before anything else works.</summary>
+    public bool MustChangePassword { get; set; }
 }
 
 /// <summary>What GET /api/auth/companies returns — safe for an anonymous login dropdown.</summary>

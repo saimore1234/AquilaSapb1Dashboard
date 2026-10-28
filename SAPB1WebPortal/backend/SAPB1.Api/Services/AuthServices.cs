@@ -42,14 +42,17 @@ public class AuthService : IAuthService
     private readonly ICompanyRegistry _companyRegistry;
     private readonly IConfiguration _configuration;
     private readonly IAdminService _adminService;
+    private readonly ISecurityService _security;
     private readonly ILogger<AuthService> _logger;
 
     public AuthService(
         ICompanyRegistry companyRegistry,
         IConfiguration configuration,
         IAdminService adminService,
+        ISecurityService security,
         ILogger<AuthService> logger)
     {
+        _security = security;
         _companyRegistry = companyRegistry;
         _configuration = configuration;
         _adminService = adminService;
@@ -123,7 +126,8 @@ public class AuthService : IAuthService
             CompanyCode = company.Code,
             CompanyName = company.Name,
             Role = record.RoleName,
-            UserId = record.Id
+            UserId = record.Id,
+            MustChangePassword = await _security.GetMustChangeAsync(record.Id, ct)
         };
 
         return (true, user);

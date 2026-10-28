@@ -3,6 +3,7 @@ import { Navigate, useLocation } from 'react-router-dom';
 import { Loader2 } from 'lucide-react';
 import AccessDenied from './AccessDenied';
 import { useAuth } from '../context/AuthContext';
+import ChangePassword from '../pages/ChangePassword';
 
 interface ProtectedRouteProps {
   children: React.ReactElement;
@@ -16,7 +17,7 @@ interface ProtectedRouteProps {
 }
 
 export default function ProtectedRoute({ children, requiredPermission, requiredAction }: ProtectedRouteProps) {
-  const { isAuthenticated, isLoading, can, canAccessPath } = useAuth();
+  const { isAuthenticated, isLoading, can, canAccessPath, mustChangePassword } = useAuth();
   const location = useLocation();
 
   if (isLoading) {
@@ -31,6 +32,9 @@ export default function ProtectedRoute({ children, requiredPermission, requiredA
   if (!isAuthenticated) {
     return <Navigate to="/login" state={{ from: location }} replace />;
   }
+
+  // A temporary password must be replaced before anything else is shown (the server refuses every other call meanwhile).
+  if (mustChangePassword) return <ChangePassword />;
 
   if ((requiredPermission && !can(requiredPermission)) || (requiredAction && !canAccessPath(location.pathname, requiredAction))) {
     return <AccessDenied />;

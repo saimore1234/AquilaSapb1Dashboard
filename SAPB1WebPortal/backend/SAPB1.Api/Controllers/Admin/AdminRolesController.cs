@@ -4,6 +4,7 @@ using SAPB1.Api.Auth;
 using SAPB1.Api.DTOs.Admin;
 using SAPB1.Api.DTOs.Common;
 using SAPB1.Api.Interfaces;
+using SAPB1.Api.Services;
 
 namespace SAPB1.Api.Controllers.Admin;
 
@@ -14,9 +15,11 @@ namespace SAPB1.Api.Controllers.Admin;
 public class AdminRolesController : ControllerBase
 {
     private readonly IAdminService _adminService;
+    private readonly ISecurityService _security;
 
-    public AdminRolesController(IAdminService adminService)
+    public AdminRolesController(IAdminService adminService, ISecurityService security)
     {
+        _security = security;
         _adminService = adminService;
     }
 
@@ -36,6 +39,7 @@ public class AdminRolesController : ControllerBase
             return BadRequest(ApiResponse<object>.Fail("Role name is required."));
 
         var id = await _adminService.CreateRoleAsync(dto, ct);
+        await _security.AuditAsync("RoleCreated", null, dto.Name);
         return Ok(ApiResponse<object>.Ok(new { id }, "Role created."));
     }
 
@@ -45,6 +49,7 @@ public class AdminRolesController : ControllerBase
     {
         var ok = await _adminService.UpdateRoleAsync(id, dto, ct);
         if (!ok) return BadRequest(ApiResponse<object>.Fail("Role not found, or it is a built-in role that cannot be renamed."));
+        await _security.AuditAsync("RoleUpdated", null, $"role #{id}", dto.Name);
         return Ok(ApiResponse<object>.Ok(new { }, "Role updated."));
     }
 
@@ -71,6 +76,7 @@ public class AdminRolesController : ControllerBase
             return StatusCode(503, ApiResponse<object>.Fail(ex.Message));
         }
         if (!ok) return BadRequest(ApiResponse<object>.Fail("Role not found, or it is the built-in Administrator role, which always has every permission."));
+        await _security.AuditAsync("RolePermissionsChanged", null, $"role #{id}", $"{dto.PermissionKeys?.Count ?? 0} module permission(s), {dto.PagePermissions?.Count ?? 0} page rule(s)");
         return Ok(ApiResponse<object>.Ok(new { }, "Permissions saved."));
     }
 }

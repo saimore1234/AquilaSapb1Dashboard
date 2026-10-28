@@ -1,5 +1,5 @@
 import React, { createContext, useContext, useEffect, useState } from 'react';
-import { login as loginApi, logout as logoutApi, getMe } from '../api/auth';
+import { login as loginApi, logout as logoutApi, getMe, changePassword as changePasswordApi } from '../api/auth';
 import { buildAccess, canAccessPath, emptyAccess, hasPermission as evaluate, type AccessSnapshot } from '../permissions/evaluate';
 import { session } from '../native/session';
 import type { SalesScope } from '../types';
@@ -18,6 +18,9 @@ interface AuthContextValue {
   isLoading: boolean;
   login: (companyDb: string, username: string, password: string) => Promise<void>;
   logout: () => Promise<void>;
+  /// true while the account still has a temporary password: the app shows only the "set a new password" screen.
+  mustChangePassword: boolean;
+  changePassword: (currentPassword: string, newPassword: string) => Promise<void>;
   hasRole: (...roles: string[]) => boolean;
   /// True if the current user's role has the given permission key (e.g.
   /// "Purchase.Create"), or if they're the portal superuser. Resolved from
@@ -53,12 +56,14 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   const [isLoading, setIsLoading] = useState(true);
   const [access, setAccess] = useState<AccessSnapshot>(emptyAccess());
   const [salesScope, setSalesScope] = useState<SalesScope | null>(null);
+  const [mustChangePassword, setMustChangePassword] = useState(false);
 
   async function loadPermissions() {
     try {
       const me = await getMe();
       setAccess(buildAccess(me.isSuperUser, me.permissions, me.pageRules ?? {}));
       setSalesScope(me.salesScope ?? null);
+      setMustChangePassword(!!me.mustChangePassword);
     } catch {
       // Non-fatal — can() just returns false for everything until a retry
       // (e.g. next login) succeeds; the backend still enforces independently.
@@ -91,7 +96,15 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     session.set(USER_KEY, JSON.stringify(authUser));
     // Permissions first, so route guards never see an authenticated user with an empty set.
     await loadPermissions();
+    setMustChangePassword(!!response.mustChangePassword);
     setUser(authUser);
+  }
+
+  async function changePassword(currentPassword: string, newPassword: string) {
+    const response = await changePasswordApi(currentPassword, newPassword);
+    session.set(TOKEN_KEY, response.token); // the old token was revoked by the server
+    await loadPermissions();
+    setMustChangePassword(false);
   }
 
   async function logout() {
@@ -109,6 +122,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       setUser(null);
       setAccess(emptyAccess());
       setSalesScope(null);
+      setMustChangePassword(false);
     }
   }
 
@@ -136,6 +150,8 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
         isLoading,
         login,
         logout,
+        mustChangePassword,
+        changePassword,
         hasRole,
         can,
         access,

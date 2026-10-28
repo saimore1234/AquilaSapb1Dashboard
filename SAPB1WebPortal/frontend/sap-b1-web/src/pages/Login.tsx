@@ -8,7 +8,7 @@ import type { CompanyOption } from '../types';
 
 const REMEMBER_KEY = 'b1_remember';
 
-type LoginError = 'credentials' | 'connect' | 'company';
+type LoginError = 'credentials' | 'connect' | 'company' | 'locked';
 
 export default function Login() {
   const { login, isAuthenticated } = useAuth();
@@ -113,7 +113,7 @@ export default function Login() {
     } catch (err: any) {
       // Raw API messages are never shown — map to a clean category instead.
       const status = err?.response?.status;
-      fail(!err?.response || status >= 500 ? 'connect' : 'credentials');
+      fail(!err?.response || status >= 500 ? 'connect' : status === 429 ? 'locked' : 'credentials');
     } finally {
       setSubmitting(false);
     }
@@ -247,7 +247,9 @@ export default function Login() {
                         ? 'Please select a company.'
                         : error === 'connect'
                           ? 'Please try again, or choose a different company.'
-                          : 'Please check your company, username and password.'}
+                          : error === 'locked'
+                            ? 'Too many failed attempts. This account is locked for a few minutes — please try again later.'
+                            : 'Please check your company, username and password.'}
                     </div>
                     <button
                       type="button"

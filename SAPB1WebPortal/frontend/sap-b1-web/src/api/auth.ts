@@ -33,6 +33,15 @@ export async function getMe(): Promise<CurrentUser> {
   return data.data;
 }
 
+/// Sets a new password for the signed-in user. Returns a fresh session (the old token is revoked).
+export async function changePassword(currentPassword: string, newPassword: string): Promise<LoginResponse> {
+  const { data } = await apiClient.post<ApiResponse<LoginResponse>>('/auth/change-password', { currentPassword, newPassword });
+  if (!data.success || !data.data) {
+    throw new Error(data.message || 'Could not change the password.');
+  }
+  return data.data;
+}
+
 /// Best-effort: tells the server to revoke the current token immediately. The
 /// caller clears local auth state regardless of whether this succeeds (e.g.
 /// the token may already be expired).

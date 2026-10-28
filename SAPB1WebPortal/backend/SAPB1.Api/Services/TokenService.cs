@@ -49,6 +49,8 @@ public class TokenService : ITokenService
             claims.Add(new Claim("userId", user.UserId.Value.ToString()));
         }
 
+        if (user.MustChangePassword) claims.Add(new Claim(AppClaimTypes.MustChangePassword, "1"));
+
         var key = new SymmetricSecurityKey(Encoding.UTF8.GetBytes(_options.Key));
         var creds = new SigningCredentials(key, SecurityAlgorithms.HmacSha256);
 

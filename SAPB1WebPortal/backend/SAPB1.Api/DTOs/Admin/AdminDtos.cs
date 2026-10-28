@@ -87,6 +87,7 @@ public class CurrentUserDto
     public string Role { get; set; } = string.Empty;
     public string Company { get; set; } = string.Empty;
     public string CompanyName { get; set; } = string.Empty;
+    public bool MustChangePassword { get; set; }
     /// <summary>True for the portal's built-in admin superuser — implies every permission without a DB lookup.</summary>
     public bool IsSuperUser { get; set; }
     public List<string> Permissions { get; set; } = new();

@@ -16,4 +16,7 @@ public class AuthenticatedUser
     /// <summary>Set only for RBAC-backed users (Services/SqlAdminService); null for the
     /// portal's built-in admin superuser, which is never a row in the Users table.</summary>
     public int? UserId { get; set; }
+
+    /// <summary>The account still has a temporary password; the token only works for changing it.</summary>
+    public bool MustChangePassword { get; set; }
 }

@@ -7,6 +7,8 @@ namespace SAPB1.Api.Auth;
 public static class AppClaimTypes
 {
     public const string CompanyDb = "companyDb";
+    /// <summary>Present (value "1") on a token issued for an account that must set a new password first.</summary>
+    public const string MustChangePassword = "pwdChange";
     public const string CompanyName = "companyName";
 }
 
