@@ -63,7 +63,7 @@ public class SalesScope : ISalesScope
             }
         }
 
-        return roleRestricted || codes.Length > 0 ? new SalesScopeInfo(true, codes) : SalesScopeInfo.Unrestricted;
+        return roleRestricted || codes.Length > 0 ? new SalesScopeInfo(true, codes, roleRestricted) : SalesScopeInfo.Unrestricted;
     }
 }
 

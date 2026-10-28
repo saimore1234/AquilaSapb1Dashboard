@@ -98,6 +98,8 @@ public class CurrentUserDto
 
 public class SalesScopeDto
 {
+    /// <summary>Salesperson (Sales-role) login: may add/edit its own salesperson targets, but not company/unit targets and cannot approve.</summary>
+    public bool OwnTargetsOnly { get; set; }
     /// <summary>true = the login only sees its own salespersons' customers, orders, invoices and targets.</summary>
     public bool Restricted { get; set; }
     /// <summary>false for a restricted login that an administrator has not linked to a salesperson yet — it sees nothing.</summary>

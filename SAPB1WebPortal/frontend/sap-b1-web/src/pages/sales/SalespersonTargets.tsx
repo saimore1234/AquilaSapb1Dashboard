@@ -63,11 +63,11 @@ function Achievement({ pct }: { pct: number | null }) {
 export default function SalespersonTargets() {
   const perms = usePermissions();
   const { salesScope } = useAuth();
-  const readOnly = !!salesScope?.restricted; // salesperson logins only view their own targets
-  const canCreate = perms.canCreate && !readOnly;
-  const canEdit = perms.canEdit && !readOnly;
-  const canDelete = perms.canDelete && !readOnly;
-  const canApprove = perms.canApprove && !readOnly;
+  const ownOnly = !!salesScope?.ownTargetsOnly; // salesperson logins add/edit their own targets (the server enforces it) but cannot approve
+  const canCreate = perms.canCreate;
+  const canEdit = perms.canEdit;
+  const canDelete = perms.canDelete;
+  const canApprove = perms.canApprove && !ownOnly;
   const { axisColor, gridColor, cur, prev, tooltipStyle } = useChartTheme();
 
   const [options, setOptions] = useState<SalesTargetOptions | null>(null);

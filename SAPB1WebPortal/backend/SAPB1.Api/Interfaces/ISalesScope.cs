@@ -7,7 +7,7 @@ namespace SAPB1.Api.Interfaces;
 ///   Restricted = true   → every customer / order / invoice / target query is limited to <see cref="SlpCodes"/>.
 ///   Restricted with NO codes → the login is a salesperson login that has not been linked to a salesperson yet: it sees nothing (fail-closed).
 /// </summary>
-public sealed record SalesScopeInfo(bool Restricted, int[] SlpCodes)
+public sealed record SalesScopeInfo(bool Restricted, int[] SlpCodes, bool RoleRestricted = false)
 {
     public static readonly SalesScopeInfo Unrestricted = new(false, Array.Empty<int>());
     public bool Denied => Restricted && SlpCodes.Length == 0;

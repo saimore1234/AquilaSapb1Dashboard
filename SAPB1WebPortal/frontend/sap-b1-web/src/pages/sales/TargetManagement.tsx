@@ -75,7 +75,7 @@ function PeriodRow({ p }: { p: PeriodPerformance }) {
 export default function TargetManagement() {
   // The API enforces the Sales > Targets permissions, so this page uses the same ones (no separate role grant needed).
   const { hasPermission, salesScope } = useAuth();
-  const readOnly = !!salesScope?.restricted; // salesperson logins only view their own targets
+  const readOnly = !!salesScope?.ownTargetsOnly; // salesperson logins work on their own item-wise targets only; company/unit targets and approvals are not theirs
   const canCreate = !readOnly && hasPermission('Sales', 'targets', 'Create');
   const canEdit = !readOnly && hasPermission('Sales', 'targets', 'Edit');
   const canDelete = !readOnly && hasPermission('Sales', 'targets', 'Delete');

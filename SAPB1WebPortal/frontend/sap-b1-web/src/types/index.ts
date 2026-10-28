@@ -294,6 +294,8 @@ export interface CurrentUser {
 
 export interface SalesScope {
   restricted: boolean;
+  /** Sales-role login: adds/edits its own salesperson targets only; cannot approve. */
+  ownTargetsOnly?: boolean;
   /** false = restricted but not linked to a salesperson yet: sees nothing. */
   linked: boolean;
   salespersons: { code: number; name: string }[];

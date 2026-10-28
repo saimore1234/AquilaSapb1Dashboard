@@ -665,8 +665,31 @@ public class SqlSalesTargetService : ISalesTargetService
             }), transaction: tx, cancellationToken: ct));
     }
 
+    /// <summary>
+    /// A salesperson (Sales-role) login may only work on Salesperson-scope targets of the salespersons it is linked to. Everyone else is
+    /// governed by role permissions alone. Checked on the server against the stored row, never against what the browser claims.
+    /// </summary>
+    private async Task<SalesTargetResult?> OwnTargetGuardAsync(int? id, SaveSalesTargetRequest? r, CancellationToken ct)
+    {
+        var sc = _scope.Current;
+        if (!sc.RoleRestricted) return null;
+        const string denied = "Your login can add and change targets for your own salesperson only.";
+        if (r is not null && (r.Scope != "Salesperson" || !sc.SlpCodes.Contains(r.SapSlpCode))) return SalesTargetResult.Fail(403, denied);
+        if (id is not null)
+        {
+            using var db = _portal.CreateConnection();
+            var row = await db.QuerySingleOrDefaultAsync<(string Scope, int SapSlpCode)?>(new CommandDefinition(
+                (_scopeColumn ? "SELECT Scope, SapSlpCode" : "SELECT 'Salesperson' AS Scope, SapSlpCode") + " FROM dbo.SalespersonTargets WHERE Id = @Id AND CompanyCode = @Company",
+                new { Id = id, Company = _company.CompanyCode }, cancellationToken: ct));
+            if (row is null) return SalesTargetResult.Fail(404, "Target not found.");
+            if (row.Value.Scope != "Salesperson" || !sc.SlpCodes.Contains(row.Value.SapSlpCode)) return SalesTargetResult.Fail(404, "Target not found.");
+        }
+        return null;
+    }
+
     public async Task<SalesTargetResult> CreateAsync(SaveSalesTargetRequest r, string user, CancellationToken ct = default)
     {
+        if (await OwnTargetGuardAsync(null, r, ct) is { } g) return g;
         var error = ValidateShape(r, out var start, out var end, out var fy);
         if (error is not null) return SalesTargetResult.Fail(400, error);
         Normalize(r);
@@ -725,6 +748,7 @@ public class SqlSalesTargetService : ISalesTargetService
 
     public async Task<SalesTargetResult> UpdateAsync(int id, SaveSalesTargetRequest r, string user, CancellationToken ct = default)
     {
+        if (await OwnTargetGuardAsync(id, r, ct) is { } g) return g;
         var error = ValidateShape(r, out var start, out var end, out var fy);
         if (error is not null) return SalesTargetResult.Fail(400, error);
         Normalize(r);
@@ -818,10 +842,13 @@ public class SqlSalesTargetService : ISalesTargetService
         return SalesTargetResult.Success(id);
     }
 
-    public Task<SalesTargetResult> SubmitAsync(int id, string user, CancellationToken ct = default) =>
-        TransitionAsync(id, "Draft",
+    public async Task<SalesTargetResult> SubmitAsync(int id, string user, CancellationToken ct = default)
+    {
+        if (await OwnTargetGuardAsync(id, null, ct) is { } g) return g;
+        return await TransitionAsync(id, "Draft",
             "Status = 'Submitted', SubmittedBy = @User, SubmittedAt = SYSUTCDATETIME(), ReviewRemarks = NULL, UpdatedBy = @User, UpdatedAt = SYSUTCDATETIME()",
             new { }, "Submitted", user, null, "Only a draft can be submitted (it may already have been submitted).", ct);
+    }
 
     public async Task<SalesTargetResult> ApproveAsync(int id, string? remarks, string user, CancellationToken ct = default)
     {
@@ -874,6 +901,7 @@ public class SqlSalesTargetService : ISalesTargetService
 
     public async Task<SalesTargetResult> ReviseAsync(int id, string user, CancellationToken ct = default)
     {
+        if (await OwnTargetGuardAsync(id, null, ct) is { } g) return g;
         await HasScopeColumnAsync(ct);
         using var db = _portal.CreateConnection();
         db.Open();
@@ -926,6 +954,7 @@ public class SqlSalesTargetService : ISalesTargetService
 
     public async Task<SalesTargetResult> DeleteAsync(int id, string user, CancellationToken ct = default)
     {
+        if (await OwnTargetGuardAsync(id, null, ct) is { } g) return g;
         using var db = _portal.CreateConnection();
         db.Open();
         using var tx = db.BeginTransaction();

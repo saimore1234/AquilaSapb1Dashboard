@@ -143,7 +143,7 @@ public class AuthController : ControllerBase
 
         // Salesperson scope: tells the UI which salespersons this login is limited to (the SERVER enforces it either way).
         var scope = HttpContext.RequestServices.GetRequiredService<ISalesScope>().Current;
-        dto.SalesScope = new SalesScopeDto { Restricted = scope.Restricted, Linked = scope.SlpCodes.Length > 0 };
+        dto.SalesScope = new SalesScopeDto { Restricted = scope.Restricted, Linked = scope.SlpCodes.Length > 0, OwnTargetsOnly = scope.RoleRestricted };
         if (scope.SlpCodes.Length > 0)
         {
             try
