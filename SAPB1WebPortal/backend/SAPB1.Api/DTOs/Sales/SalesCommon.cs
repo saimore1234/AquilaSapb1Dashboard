@@ -6,6 +6,8 @@ public class SalesDocumentLineDto
     public int LineNum { get; set; }
     public string ItemCode { get; set; } = string.Empty;
     public string ItemName { get; set; } = string.Empty;
+    /// <summary>Item master user field U_AromaCode (null when the company has no such field or the item has none).</summary>
+    public string? AromaCode { get; set; }
     public double Quantity { get; set; }
     public double? OpenQuantity { get; set; }
     /// <summary>Populated only for Sales Orders/Deliveries, whose line tables (RDR1/DLN1) track it — null elsewhere.</summary>

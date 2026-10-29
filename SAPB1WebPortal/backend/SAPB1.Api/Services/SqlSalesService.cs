@@ -225,8 +225,8 @@ public class SqlSalesService : ISalesService
         var header = await db.QuerySingleOrDefaultAsync(new CommandDefinition(headerSql, new { DocEntry = docEntry }, cancellationToken: ct));
         if (header is null) return null;
 
-        const string linesSql = @"
-            SELECT l.LineNum, l.ItemCode, i.ItemName, l.Quantity, NULL AS OpenQuantity, NULL AS DeliveredQuantity, NULL AS OrderedQuantity,
+        var linesSql = $@"
+            SELECT l.LineNum, l.ItemCode, i.ItemName, {ItemUdf.Aroma(await ItemUdf.HasAromaAsync(db, ct), "i")} AS AromaCode, l.Quantity, NULL AS OpenQuantity, NULL AS DeliveredQuantity, NULL AS OrderedQuantity,
                    l.WhsCode AS Warehouse, l.Price, l.DiscPrcnt AS DiscountPercent, l.TaxCode, l.LineTotal
             FROM QUT1 l
             LEFT JOIN OITM i ON i.ItemCode = l.ItemCode
@@ -307,8 +307,8 @@ public class SqlSalesService : ISalesService
         var header = await db.QuerySingleOrDefaultAsync(new CommandDefinition(headerSql, new { DocEntry = docEntry }, cancellationToken: ct));
         if (header is null) return null;
 
-        const string linesSql = @"
-            SELECT l.LineNum, l.ItemCode, i.ItemName, l.Quantity, l.OpenQty AS OpenQuantity, l.DelivrdQty AS DeliveredQuantity, NULL AS OrderedQuantity,
+        var linesSql = $@"
+            SELECT l.LineNum, l.ItemCode, i.ItemName, {ItemUdf.Aroma(await ItemUdf.HasAromaAsync(db, ct), "i")} AS AromaCode, l.Quantity, l.OpenQty AS OpenQuantity, l.DelivrdQty AS DeliveredQuantity, NULL AS OrderedQuantity,
                    l.WhsCode AS Warehouse, l.Price, l.DiscPrcnt AS DiscountPercent, l.TaxCode, l.LineTotal
             FROM RDR1 l
             LEFT JOIN OITM i ON i.ItemCode = l.ItemCode
@@ -379,8 +379,8 @@ public class SqlSalesService : ISalesService
         var header = await db.QuerySingleOrDefaultAsync(new CommandDefinition(headerSql, new { DocEntry = docEntry }, cancellationToken: ct));
         if (header is null) return null;
 
-        const string linesSql = @"
-            SELECT l.LineNum, l.ItemCode, i.ItemName, l.Quantity, l.OpenQty AS OpenQuantity, l.DelivrdQty AS DeliveredQuantity, l.OrderedQty AS OrderedQuantity,
+        var linesSql = $@"
+            SELECT l.LineNum, l.ItemCode, i.ItemName, {ItemUdf.Aroma(await ItemUdf.HasAromaAsync(db, ct), "i")} AS AromaCode, l.Quantity, l.OpenQty AS OpenQuantity, l.DelivrdQty AS DeliveredQuantity, l.OrderedQty AS OrderedQuantity,
                    l.WhsCode AS Warehouse, l.Price, l.DiscPrcnt AS DiscountPercent, l.TaxCode, l.LineTotal
             FROM DLN1 l
             LEFT JOIN OITM i ON i.ItemCode = l.ItemCode
@@ -463,8 +463,8 @@ public class SqlSalesService : ISalesService
         var header = await db.QuerySingleOrDefaultAsync(new CommandDefinition(headerSql, new { DocEntry = docEntry }, cancellationToken: ct));
         if (header is null) return null;
 
-        const string linesSql = @"
-            SELECT l.LineNum, l.ItemCode, i.ItemName, l.Quantity, NULL AS OpenQuantity, NULL AS DeliveredQuantity, NULL AS OrderedQuantity,
+        var linesSql = $@"
+            SELECT l.LineNum, l.ItemCode, i.ItemName, {ItemUdf.Aroma(await ItemUdf.HasAromaAsync(db, ct), "i")} AS AromaCode, l.Quantity, NULL AS OpenQuantity, NULL AS DeliveredQuantity, NULL AS OrderedQuantity,
                    l.WhsCode AS Warehouse, l.Price, l.DiscPrcnt AS DiscountPercent, l.TaxCode, l.LineTotal
             FROM INV1 l
             LEFT JOIN OITM i ON i.ItemCode = l.ItemCode
@@ -530,8 +530,8 @@ public class SqlSalesService : ISalesService
         var header = await db.QuerySingleOrDefaultAsync(new CommandDefinition(headerSql, new { DocEntry = docEntry }, cancellationToken: ct));
         if (header is null) return null;
 
-        const string linesSql = @"
-            SELECT l.LineNum, l.ItemCode, i.ItemName, l.Quantity, NULL AS OpenQuantity, NULL AS DeliveredQuantity, NULL AS OrderedQuantity,
+        var linesSql = $@"
+            SELECT l.LineNum, l.ItemCode, i.ItemName, {ItemUdf.Aroma(await ItemUdf.HasAromaAsync(db, ct), "i")} AS AromaCode, l.Quantity, NULL AS OpenQuantity, NULL AS DeliveredQuantity, NULL AS OrderedQuantity,
                    l.WhsCode AS Warehouse, l.Price, l.DiscPrcnt AS DiscountPercent, l.TaxCode, l.LineTotal
             FROM RIN1 l
             LEFT JOIN OITM i ON i.ItemCode = l.ItemCode

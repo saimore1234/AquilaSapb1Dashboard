@@ -4,7 +4,7 @@ import { getInvoiceRegister } from '../../api/sales';
 import type { InvoiceRegister } from '../../types';
 import { ErrorState } from '../StateViews';
 import { Skeleton } from '../ui/Skeleton';
-import { SectionHeading, StatusPill, formatDate, inr, num } from './salesShared';
+import { SectionHeading, formatDate, inr, num } from './salesShared';
 import { downloadCsv } from './salesUtils';
 import { taxLabel, useSalesFilters } from './salesFilters';
 import { useSalesRefresh } from './salesRefresh';
@@ -58,8 +58,8 @@ export default function InvoiceRegisterSection({ reportTo, pageSize = 7 }: { rep
     const all = await getInvoiceRegister({ dateFrom: from, dateTo: to, includeTax, dispatch, search: query || undefined, page: 1, pageSize: 5000 });
     downloadCsv(
       `invoice-register-${from}-to-${to}-${includeTax ? 'incl' : 'excl'}-tax.csv`,
-      ['Invoice No', 'Date', 'Customer Code', 'Customer', 'Item', 'Quantity', 'Rate', `Value (${taxLabel(includeTax)})`, 'Dispatch Status', 'LR No', 'LR Date', 'Transporter', 'Order Date', 'No. of Days (order to invoice)', ...(showAroma ? ['Aroma Code'] : [])],
-      all.rows.map((r) => [r.docNum, r.docDate.slice(0, 10), r.customerCode, r.customerName, r.item, r.quantity, r.rate, r.value, r.dispatchStatus, r.lrNo, r.lrDate?.slice(0, 10), r.transporter, r.orderDate?.slice(0, 10), r.daysOrderToInvoice, ...(showAroma ? [r.aromaCode] : [])])
+      ['Invoice No', 'Date', 'Customer Code', 'Customer', 'Item', 'Quantity', 'Rate', `Value (${taxLabel(includeTax)})`, 'LR No', 'LR Date', 'Transporter', 'Order Date', 'No. of Days (order to invoice)', ...(showAroma ? ['Aroma Code'] : [])],
+      all.rows.map((r) => [r.docNum, r.docDate.slice(0, 10), r.customerCode, r.customerName, r.item, r.quantity, r.rate, r.value, r.lrNo, r.lrDate?.slice(0, 10), r.transporter, r.orderDate?.slice(0, 10), r.daysOrderToInvoice, ...(showAroma ? [r.aromaCode] : [])])
     );
   }
 
@@ -103,7 +103,6 @@ export default function InvoiceRegisterSection({ reportTo, pageSize = 7 }: { rep
                   <th className="px-4 py-2.5 font-medium text-right">Qty</th>
                   <th className="px-4 py-2.5 font-medium text-right">Rate</th>
                   <th className="px-4 py-2.5 font-medium text-right">Value ({taxLabel(includeTax)})</th>
-                  <th className="px-4 py-2.5 font-medium">Dispatch</th>
                   <th className="px-4 py-2.5 font-medium">LR No.</th>
                   <th className="px-4 py-2.5 font-medium">LR Date</th>
                   <th className="px-4 py-2.5 font-medium">Transporter</th>
@@ -113,7 +112,7 @@ export default function InvoiceRegisterSection({ reportTo, pageSize = 7 }: { rep
                 {loading
                   ? Array.from({ length: 5 }).map((_, i) => (
                       <tr key={i} className="border-b border-border last:border-0">
-                        <td colSpan={showAroma ? 13 : 12} className="px-4 py-3"><Skeleton className="h-4 w-full" /></td>
+                        <td colSpan={showAroma ? 12 : 11} className="px-4 py-3"><Skeleton className="h-4 w-full" /></td>
                       </tr>
                     ))
                   : data?.rows.map((r) => (
@@ -130,14 +129,13 @@ export default function InvoiceRegisterSection({ reportTo, pageSize = 7 }: { rep
                         <td className="px-4 py-3 text-right tabular-nums">{num.format(r.quantity)} <span className="text-xs text-ink-tertiary">{r.uom ?? ''}</span></td>
                         <td className="px-4 py-3 text-right tabular-nums">{r.lineCount > 1 ? 'avg ' : ''}{inr.format(r.rate)}</td>
                         <td className="px-4 py-3 text-right tabular-nums font-medium">{inr.format(r.value)}</td>
-                        <td className="px-4 py-3"><StatusPill text={r.dispatchStatus} /></td>
                         <td className="px-4 py-3 whitespace-nowrap">{r.lrNo ?? '—'}</td>
                         <td className="px-4 py-3 whitespace-nowrap">{r.lrDate ? formatDate(r.lrDate) : '—'}</td>
                         <td className="px-4 py-3">{r.transporter ?? '—'}</td>
                       </tr>
                     ))}
                 {!loading && data?.rows.length === 0 && (
-                  <tr><td colSpan={showAroma ? 13 : 12} className="px-4 py-10 text-center text-ink-tertiary">No invoices match.</td></tr>
+                  <tr><td colSpan={showAroma ? 12 : 11} className="px-4 py-10 text-center text-ink-tertiary">No invoices match.</td></tr>
                 )}
               </tbody>
             </table>

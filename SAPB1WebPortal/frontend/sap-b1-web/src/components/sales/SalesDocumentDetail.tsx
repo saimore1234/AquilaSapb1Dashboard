@@ -105,6 +105,7 @@ export default function SalesDocumentDetail<T extends DetailBase>({
   const statusBadgeClass = doc.status === 'Open' ? 'badge-success' : doc.status === 'Closed' ? 'badge-neutral' : 'badge-warning';
   const currency = doc.currency;
   const hasQtyTracking = doc.lines.some((l) => l.deliveredQuantity != null || l.orderedQuantity != null);
+  const hasAroma = doc.lines.some((l) => !!l.aromaCode);
 
   return (
     <div className="space-y-6 max-w-4xl">
@@ -159,6 +160,7 @@ export default function SalesDocumentDetail<T extends DetailBase>({
               <thead className="bg-surface-secondary text-ink-secondary text-left">
                 <tr>
                   <th className="px-4 py-2.5 font-medium">Item</th>
+                  {hasAroma && <th className="px-4 py-2.5 font-medium">Aroma Code</th>}
                   <th className="px-4 py-2.5 font-medium hidden md:table-cell">Warehouse</th>
                   <th className="px-4 py-2.5 font-medium text-right">Quantity</th>
                   {hasQtyTracking && <th className="px-4 py-2.5 font-medium text-right hidden md:table-cell">Delivered</th>}
@@ -174,6 +176,7 @@ export default function SalesDocumentDetail<T extends DetailBase>({
                       <p className="font-medium text-ink-primary">{l.itemName || l.itemCode}</p>
                       <p className="text-ink-tertiary text-xs">{l.itemCode}</p>
                     </td>
+                    {hasAroma && <td className="px-4 py-2.5 whitespace-nowrap">{l.aromaCode || '—'}</td>}
                     <td className="px-4 py-2.5 hidden md:table-cell text-ink-secondary">{l.warehouse || '—'}</td>
                     <td className="px-4 py-2.5 text-right tabular-nums">
                       {l.quantity.toLocaleString()}

@@ -197,6 +197,7 @@ export interface PurchaseDocumentLine {
   lineNum: number;
   itemCode: string;
   itemName: string | null;
+  aromaCode?: string | null;
   quantity: number;
   openQuantity: number | null;
   warehouse: string | null;
@@ -641,6 +642,7 @@ export interface SalesDocumentLine {
   lineNum: number;
   itemCode: string;
   itemName: string | null;
+  aromaCode?: string | null;
   quantity: number;
   openQuantity: number | null;
   deliveredQuantity: number | null;
