@@ -165,7 +165,10 @@ export default function TargetManagement() {
         <div className="flex flex-wrap items-center gap-2">
           <Link to="/sales" className="btn-secondary btn-compact">Sales Dashboard</Link>
           {scope === 'Salesperson' ? (
-            <Link to="/sales/targets" className="btn-secondary btn-compact">Salesperson Targets (item-wise)</Link>
+            <>
+              {canCreate && <Link to="/sales/targets" className="btn-primary btn-compact"><Plus className="h-4 w-4" /> New salesperson target</Link>}
+              <Link to="/sales/targets" className="btn-secondary btn-compact">Salesperson Targets (item-wise)</Link>
+            </>
           ) : canCreate && (
             <button className="btn-primary btn-compact" onClick={() => setForm({ open: true, target: null })}><Plus className="h-4 w-4" /> New {scope === 'Company' ? 'company' : 'unit'} target</button>
           )}
