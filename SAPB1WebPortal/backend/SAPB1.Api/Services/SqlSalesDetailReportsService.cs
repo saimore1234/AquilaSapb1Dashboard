@@ -128,7 +128,7 @@ public class SqlSalesDetailReportsService : ISalesDetailReportsService
 
         var udf = await DispatchUdfs.LoadAsync(db, ct);
         var rows = (await db.QueryAsync<OpenSalesOrderLineDto>(new CommandDefinition($@"
-            SELECT h.DocEntry, h.DocNum, h.DocDate AS PostingDate, l.ShipDate AS DueDate, {udf.EtaExpr("l")} AS EtaProduction,
+            SELECT h.DocEntry, h.DocNum, NULLIF(LTRIM(RTRIM(h.NumAtCard)), '') AS CustomerPoNumber, h.DocDate AS PostingDate, l.ShipDate AS DueDate, {udf.EtaExpr("l")} AS EtaProduction,
                    DATEDIFF(DAY, h.DocDate, CAST(GETDATE() AS date)) AS DaysOpen, h.CardCode AS CustomerCode, h.CardName AS CustomerName,
                    l.ItemCode, {aroma} AS AromaCode, l.Dscription AS ItemDescription, {ProductCategories.Expr("i")} AS ProductCategory,
                    l.WhsCode AS WarehouseCode, w.WhsName AS Warehouse, u.Location AS Unit, s.SlpName AS Salesperson,

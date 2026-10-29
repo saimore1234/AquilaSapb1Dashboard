@@ -61,6 +61,8 @@ public class WarehouseOptionDto
 // ------------------------------------------------------------------ Open Sales Orders (client line definition)
 public class OpenSalesOrderLineDto
 {
+    /// <summary>Customer PO number (document "Customer Ref. No.") when entered.</summary>
+    public string? CustomerPoNumber { get; set; }
     /// <summary>Item master user-defined field "Aroma Code" (OITM.U_AromaCode).</summary>
     public string? AromaCode { get; set; }
     public int DocEntry { get; set; }

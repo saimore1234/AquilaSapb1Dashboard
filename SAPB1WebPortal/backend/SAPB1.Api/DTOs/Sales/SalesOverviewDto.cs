@@ -44,6 +44,8 @@ public class SalesOverviewMonthDto
 
 public class OpenSalesOrderRowDto
 {
+    /// <summary>Customer PO number (document "Customer Ref. No.") when entered.</summary>
+    public string? CustomerPoNumber { get; set; }
     public int DocEntry { get; set; }
     public int DocNum { get; set; }
     public DateTime PostingDate { get; set; }

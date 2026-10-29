@@ -1591,6 +1591,8 @@ export interface TurnoverBreakup {
 }
 
 export interface OpenSalesOrderRow {
+  /** Customer PO number (Customer Ref. No.) when entered. */
+  customerPoNumber?: string | null;
   /** ETA from production as entered on the order lines. */
   etaProduction: string | null;
   /** Days from the order date to today. */
@@ -1636,6 +1638,8 @@ export interface InvoiceRegisterQuery {
 }
 
 export interface InvoiceRegisterRow {
+  /** Customer PO number (Customer Ref. No.) when entered. */
+  customerPoNumber?: string | null;
   /** Aroma Code of the first line's item. */
   aromaCode: string | null;
   lrNo: string | null;
@@ -1942,6 +1946,8 @@ export interface OpenOrderTotals {
 }
 
 export interface OpenSalesOrderLine {
+  /** Customer PO number (Customer Ref. No.) when entered. */
+  customerPoNumber?: string | null;
   /** Item master user-defined field "Aroma Code". */
   aromaCode: string | null;
   /** ETA from production, exactly as entered on the order line (free text). */

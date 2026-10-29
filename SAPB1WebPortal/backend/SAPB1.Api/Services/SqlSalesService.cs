@@ -891,7 +891,7 @@ public class SqlSalesService : ISalesService
             SELECT TOP 2000
                 CASE WHEN @SearchLike IS NOT NULL AND EXISTS (SELECT 1 FROM RDR1 sl WHERE sl.DocEntry = h.DocEntry AND sl.ItemCode IN
                      (SELECT si.ItemCode FROM OITM si WHERE si.ItemCode LIKE @SearchLike OR si.ItemName LIKE @SearchLike OR {ItemUdf.Aroma(aromaOn, "si")} LIKE @SearchLike)) THEN 1 ELSE 0 END AS ItemHit,
-                h.DocEntry, h.DocNum, h.DocDate AS PostingDate, h.CardCode AS CustomerCode, h.CardName AS CustomerName,
+                h.DocEntry, h.DocNum, NULLIF(LTRIM(RTRIM(h.NumAtCard)), '') AS CustomerPoNumber, h.DocDate AS PostingDate, h.CardCode AS CustomerCode, h.CardName AS CustomerName,
                 c.City, h.DocDueDate AS Eta, h.DocTotal AS Total,
                 (SELECT TOP 1 l.Dscription FROM RDR1 l WHERE l.DocEntry = h.DocEntry ORDER BY l.LineNum) AS Item,
                 (SELECT TOP 1 l.unitMsr FROM RDR1 l WHERE l.DocEntry = h.DocEntry ORDER BY l.LineNum) AS Uom,
@@ -930,7 +930,7 @@ public class SqlSalesService : ISalesService
 
             rows.Add(new OpenSalesOrderRowDto
             {
-                DocEntry = r.DocEntry, DocNum = r.DocNum, PostingDate = r.PostingDate,
+                DocEntry = r.DocEntry, DocNum = r.DocNum, CustomerPoNumber = r.CustomerPoNumber, PostingDate = r.PostingDate,
                 CustomerCode = r.CustomerCode, CustomerName = r.CustomerName, City = r.City,
                 Item = r.Item, Uom = r.Uom, LineCount = r.LineCount,
                 OrderedQty = ordered, PendingQty = pending,

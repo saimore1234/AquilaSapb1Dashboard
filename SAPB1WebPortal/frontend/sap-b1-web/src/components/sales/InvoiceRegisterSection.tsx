@@ -117,7 +117,7 @@ export default function InvoiceRegisterSection({ reportTo, pageSize = 7 }: { rep
                     ))
                   : data?.rows.map((r) => (
                       <tr key={r.docEntry} className="border-b border-border last:border-0 hover:bg-surface-tertiary/60">
-                        <td className="px-4 py-3 font-medium text-brand-600 dark:text-brand-400 whitespace-nowrap">INV/{r.docNum}</td>
+                        <td className="px-4 py-3 font-medium text-brand-600 dark:text-brand-400 whitespace-nowrap">INV/{r.docNum}{r.customerPoNumber && <div className="text-xs font-normal text-ink-secondary" title="Customer PO number">PO: {r.customerPoNumber}</div>}</td>
                         <td className="px-4 py-3 whitespace-nowrap">{formatDate(r.docDate)}</td>
                         <td className="px-4 py-3 text-right tabular-nums" title={r.orderDate ? `Order date ${formatDate(r.orderDate)}` : 'No linked sales order'}>{r.daysOrderToInvoice ?? '—'}</td>
                         <td className="px-4 py-3 text-ink-primary">{r.customerName ?? r.customerCode}</td>

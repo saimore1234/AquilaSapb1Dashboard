@@ -52,7 +52,7 @@ public class SqlSalesReportsService : ISalesReportsService
         var aromaFirst = ItemUdf.Aroma(aromaHas, "it");
         var cte = $@"
             WITH inv AS (
-                SELECT h.DocEntry, h.DocNum, h.DocDate, h.CardCode, h.CardName, {SalesAmount.Header(q.IncludeTax, "h")} AS Amt, h.DocStatus,
+                SELECT h.DocEntry, h.DocNum, NULLIF(LTRIM(RTRIM(h.NumAtCard)), '') AS PoNo, h.DocDate, h.CardCode, h.CardName, {SalesAmount.Header(q.IncludeTax, "h")} AS Amt, h.DocStatus,
                        CASE WHEN EXISTS (SELECT 1 FROM INV1 l WHERE l.DocEntry = h.DocEntry AND l.BaseType = 15)
                             THEN 1 ELSE 0 END AS FromDelivery
                 FROM OINV h
@@ -67,7 +67,7 @@ public class SqlSalesReportsService : ISalesReportsService
             cte + " SELECT COUNT(*) AS Cnt, ISNULL(SUM(Amt), 0) AS Total FROM inv" + filter, p, cancellationToken: ct));
 
         var rows = (await db.QueryAsync(new CommandDefinition(cte + @"
-            SELECT i.DocEntry, i.DocNum, i.DocDate, i.CardCode, i.CardName, i.Amt, i.DocStatus, i.FromDelivery,
+            SELECT i.DocEntry, i.DocNum, i.PoNo, i.DocDate, i.CardCode, i.CardName, i.Amt, i.DocStatus, i.FromDelivery,
                    (SELECT TOP 1 l.Dscription FROM INV1 l WHERE l.DocEntry = i.DocEntry ORDER BY l.LineNum) AS Item,
                    (SELECT TOP 1 " + aromaFirst + @" FROM INV1 l LEFT JOIN OITM it ON it.ItemCode = l.ItemCode WHERE l.DocEntry = i.DocEntry ORDER BY l.LineNum) AS AromaCode,
                    (SELECT TOP 1 l.unitMsr FROM INV1 l WHERE l.DocEntry = i.DocEntry ORDER BY l.LineNum) AS Uom,
@@ -85,7 +85,7 @@ public class SqlSalesReportsService : ISalesReportsService
             decimal net = Convert.ToDecimal(r.Net);
             dto.Rows.Add(new InvoiceRegisterRowDto
             {
-                DocEntry = r.DocEntry, DocNum = r.DocNum, DocDate = r.DocDate,
+                DocEntry = r.DocEntry, DocNum = r.DocNum, CustomerPoNumber = r.PoNo, DocDate = r.DocDate,
                 CustomerCode = r.CardCode, CustomerName = r.CardName,
                 Item = r.Item, AromaCode = r.AromaCode, Uom = r.Uom, LineCount = r.LineCount, Quantity = qty,
                 Rate = qty > 0 ? Math.Round(net / (decimal)qty, 2) : 0,

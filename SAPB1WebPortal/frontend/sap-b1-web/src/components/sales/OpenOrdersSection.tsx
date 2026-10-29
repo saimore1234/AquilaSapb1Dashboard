@@ -126,6 +126,7 @@ export default function OpenOrdersSection({ reportTo, pageSize = 8 }: { reportTo
                         <Link to={`/sales/orders/${r.docEntry}`} className="text-brand-600 dark:text-brand-400 font-medium hover:underline">
                           SO/{r.docNum}
                         </Link>
+                        {r.customerPoNumber && <div className="text-xs text-ink-secondary" title="Customer PO number">PO: {r.customerPoNumber}</div>}
                         <div className="text-xs text-ink-tertiary">{formatDate(r.postingDate)}</div>
                       </td>
                       <td className="px-4 py-3">

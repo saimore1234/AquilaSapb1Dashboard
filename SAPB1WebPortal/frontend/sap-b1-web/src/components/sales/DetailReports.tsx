@@ -12,7 +12,7 @@ const foot = 'px-3 py-2.5 font-semibold bg-surface-tertiary/60 border-t border-b
 
 // ---------------------------------------------------------------- Open Sales Orders (line level — the client's definition)
 const soCols: Col<OpenSalesOrderLine>[] = [
-  { key: 'no', header: 'Order No.', render: (r) => `SO/${r.docNum}`, csv: (r) => r.docNum, nowrap: true },
+  { key: 'no', header: 'Order No.', render: (r) => (<><div>SO/{r.docNum}</div>{r.customerPoNumber && <div className="text-xs text-ink-secondary" title="Customer PO number">PO: {r.customerPoNumber}</div>}</>), csv: (r) => r.docNum, nowrap: true },
   { key: 'date', header: 'Posting Date', render: (r) => formatDate(r.postingDate), csv: (r) => r.postingDate.slice(0, 10), nowrap: true },
   { key: 'days', header: 'No. of Days', align: 'right', render: (r) => r.daysOpen, csv: (r) => r.daysOpen },
   { key: 'cust', header: 'Customer', render: (r) => (<><div className="text-ink-primary">{r.customerName ?? r.customerCode}</div><div className="text-xs text-ink-tertiary">{r.customerCode}</div></>), csv: (r) => `${r.customerCode} - ${r.customerName ?? ''}` },

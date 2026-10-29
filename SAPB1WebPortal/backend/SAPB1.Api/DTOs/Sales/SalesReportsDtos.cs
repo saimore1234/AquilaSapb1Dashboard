@@ -15,6 +15,8 @@ public class InvoiceRegisterQuery
 
 public class InvoiceRegisterRowDto
 {
+    /// <summary>Customer PO number (document "Customer Ref. No.") when entered.</summary>
+    public string? CustomerPoNumber { get; set; }
     /// <summary>Aroma Code (item master UDF) of the first line's item — the same item the Item column shows.</summary>
     public string? AromaCode { get; set; }
     public int DocEntry { get; set; }
