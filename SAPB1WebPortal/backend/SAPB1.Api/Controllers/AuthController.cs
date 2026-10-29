@@ -22,6 +22,7 @@ public class AuthController : ControllerBase
     private readonly ITokenRevocationStore _revocationStore;
     private readonly IAdminService _adminService;
     private readonly ISecurityService _security;
+    private readonly IConfiguration _config;
     private readonly LoginAttemptTracker _attempts;
     private readonly ILogger<AuthController> _logger;
 
@@ -32,10 +33,12 @@ public class AuthController : ControllerBase
         ITokenRevocationStore revocationStore,
         IAdminService adminService,
         ISecurityService security,
+        IConfiguration config,
         LoginAttemptTracker attempts,
         ILogger<AuthController> logger)
     {
         _security = security;
+        _config = config;
         _attempts = attempts;
         _authService = authService;
         _tokenService = tokenService;
@@ -210,6 +213,7 @@ public class AuthController : ControllerBase
             CompanyName = User.FindFirstValue(AppClaimTypes.CompanyName) ?? string.Empty,
             IsSuperUser = access.IsFullAccess,
             MustChangePassword = User.HasClaim(AppClaimTypes.MustChangePassword, "1"),
+            CanCopyAccess = Controllers.Admin.AdminAccessCopyController.IsAllowed(User, _config),
             Permissions = access.ModuleKeys.ToList(),
             PageRules = access.PageRules.ToDictionary(kv => kv.Key, kv => kv.Value)
         };

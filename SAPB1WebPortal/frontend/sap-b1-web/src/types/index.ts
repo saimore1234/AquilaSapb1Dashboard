@@ -282,6 +282,8 @@ export interface Warehouse {
 
 export interface CurrentUser {
   mustChangePassword?: boolean;
+  /** May use "copy access" in Administration (Admin and the users named in the server settings). */
+  canCopyAccess?: boolean;
   username: string;
   role: string;
   company: string;

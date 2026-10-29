@@ -42,6 +42,12 @@ export const updateRolePermissions = (id: number, permissionKeys: string[], page
   apiClient.put(`/admin/roles/${id}/permissions`, { permissionKeys, pagePermissions });
 
 // Permissions
+/// "Copy access" — server-side limited to the Admin and the users named in the server settings.
+export const copyRolePermissions = (targetRoleId: number, sourceRoleId: number) => apiClient.post(`/admin/access-copy/roles/${targetRoleId}/from/${sourceRoleId}`);
+export const duplicateRole = (sourceRoleId: number, name: string) => apiClient.post(`/admin/access-copy/roles/${sourceRoleId}/duplicate`, { name });
+export const copyUserAccess = (targetUserId: number, sourceUserId: number, copySalespersonLinks: boolean) =>
+  apiClient.post(`/admin/access-copy/users/${targetUserId}/from/${sourceUserId}`, { copySalespersonLinks });
+
 export const getPermissions = () => unwrap<Permission[]>(apiClient.get('/admin/permissions'), 'Failed to load permissions.');
 
 // Server / Company Configuration

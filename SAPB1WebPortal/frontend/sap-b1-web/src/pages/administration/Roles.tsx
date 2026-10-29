@@ -6,7 +6,8 @@ import Modal from '../../components/ui/Modal';
 import { useToast } from '../../context/ToastContext';
 import { usePermissions } from '../../permissions/usePermissions';
 import { getApplicationModules, STANDARD_ACTIONS, VIEW_ACTION, type PermissionModule, type PermissionPage } from '../../permissions/registry';
-import { getRoles, createRole, getRolePermissions, updateRolePermissions } from '../../api/admin';
+import { getRoles, createRole, getRolePermissions, updateRolePermissions, copyRolePermissions, duplicateRole } from '../../api/admin';
+import { useAuth } from '../../context/AuthContext';
 import type { AdminRole, PagePermission } from '../../types';
 
 /**
@@ -48,6 +49,11 @@ function Cell({ locked, supported, checked, disabled, blocked, onClick, label }:
 
 export default function AdminRolesPage() {
   const { canEdit, canCreate } = usePermissions();
+  const { canCopyAccess } = useAuth();
+  const [copySource, setCopySource] = useState('');
+  const [dupName, setDupName] = useState('');
+  const [reloadKey, setReloadKey] = useState(0);
+  const [copying, setCopying] = useState(false);
   const toast = useToast();
   const modules = useMemo(() => getApplicationModules(), []);
   // Standard actions first, then any extra action a module/page declares (e.g. "TestConnection").
@@ -105,7 +111,7 @@ export default function AdminRolesPage() {
       .catch((err) => toast.show({ variant: 'error', title: 'Failed to load permissions', description: err.message }))
       .finally(() => setMatrixLoading(false));
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [selectedRoleId]);
+  }, [selectedRoleId, reloadKey]);
 
   const selectedRole = roles.find((r) => r.id === selectedRoleId) || null;
   const locked = !canEdit || !!selectedRole?.isSystemRole;
@@ -179,6 +185,41 @@ export default function AdminRolesPage() {
       return next;
     });
 
+  async function copyFromRole() {
+    if (!selectedRole || !copySource) return;
+    const source = roles.find((x) => x.id === Number(copySource));
+    if (!source || !window.confirm(`Replace ALL permissions of "${selectedRole.name}" with those of "${source.name}"? Users in this role get the new access immediately.`)) return;
+    setCopying(true);
+    try {
+      await copyRolePermissions(selectedRole.id, source.id);
+      toast.show({ variant: 'success', title: 'Permissions copied', description: `${selectedRole.name} now matches ${source.name}.` });
+      setCopySource('');
+      setReloadKey((k) => k + 1);
+      load();
+    } catch (err: any) {
+      toast.show({ variant: 'error', title: 'Could not copy', description: err?.response?.data?.message || err.message });
+    } finally {
+      setCopying(false);
+    }
+  }
+
+  async function duplicateThisRole() {
+    if (!selectedRole || !dupName.trim()) return;
+    setCopying(true);
+    try {
+      const created = await duplicateRole(selectedRole.id, dupName.trim());
+      toast.show({ variant: 'success', title: 'Role created', description: `${dupName.trim()} has the same permissions as ${selectedRole.name}.` });
+      setDupName('');
+      const newId = (created.data as { data?: { id?: number } })?.data?.id;
+      if (newId) setSelectedRoleId(newId);
+      load();
+    } catch (err: any) {
+      toast.show({ variant: 'error', title: 'Could not create the role', description: err?.response?.data?.message || err.message });
+    } finally {
+      setCopying(false);
+    }
+  }
+
   async function save() {
     if (!selectedRoleId) return;
     setSaving(true);
@@ -247,6 +288,28 @@ export default function AdminRolesPage() {
                 </div>
                 {selectedRole.isSystemRole && <span className="badge-info">Always full access</span>}
               </div>
+
+              {canCopyAccess && (
+                <div className="mt-4 rounded-lg border border-border p-3 space-y-2.5">
+                  <div className="text-xs font-semibold text-ink-secondary uppercase tracking-wide">Copy access</div>
+                  {!selectedRole.isSystemRole && (
+                    <div className="flex flex-wrap items-center gap-2">
+                      <select className="input-field !w-auto min-w-[200px] text-sm py-1.5" value={copySource} onChange={(e) => setCopySource(e.target.value)} aria-label="Copy permissions from role">
+                        <option value="">Copy permissions from…</option>
+                        {roles.filter((x) => x.id !== selectedRole.id && !x.isSystemRole).map((x) => <option key={x.id} value={x.id}>{x.name}</option>)}
+                      </select>
+                      <button className="btn-secondary text-xs py-1.5 px-3" disabled={!copySource || copying} onClick={copyFromRole}>Copy to {selectedRole.name}</button>
+                    </div>
+                  )}
+                  {!selectedRole.isSystemRole && (
+                    <div className="flex flex-wrap items-center gap-2">
+                      <input className="input-field !w-auto min-w-[200px] text-sm py-1.5" placeholder="New role name" value={dupName} onChange={(e) => setDupName(e.target.value)} aria-label="Name for the duplicated role" />
+                      <button className="btn-secondary text-xs py-1.5 px-3" disabled={!dupName.trim() || copying} onClick={duplicateThisRole}>Duplicate {selectedRole.name} as a new role</button>
+                    </div>
+                  )}
+                  <p className="text-xs text-ink-tertiary">Copying replaces this role's permissions. Then give the role to a user in Administration → Users.</p>
+                </div>
+              )}
 
               <div className="flex gap-2 flex-wrap mt-4 mb-2">
                 {!locked && (

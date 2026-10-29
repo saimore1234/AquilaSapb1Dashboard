@@ -88,6 +88,8 @@ public class CurrentUserDto
     public string Company { get; set; } = string.Empty;
     public string CompanyName { get; set; } = string.Empty;
     public bool MustChangePassword { get; set; }
+    /// <summary>May use "copy access" (roles/permissions and users) in Administration.</summary>
+    public bool CanCopyAccess { get; set; }
     /// <summary>True for the portal's built-in admin superuser — implies every permission without a DB lookup.</summary>
     public bool IsSuperUser { get; set; }
     public List<string> Permissions { get; set; } = new();

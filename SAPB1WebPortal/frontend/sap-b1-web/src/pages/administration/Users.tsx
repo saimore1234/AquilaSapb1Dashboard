@@ -1,12 +1,13 @@
 import { useEffect, useState } from 'react';
-import { Plus, KeyRound, Trash2, Pencil } from 'lucide-react';
+import { Plus, KeyRound, Trash2, Pencil, Copy } from 'lucide-react';
 import { ErrorState, EmptyState } from '../../components/StateViews';
 import { TableSkeleton } from '../../components/ui/Skeleton';
 import ResponsiveTable, { type ColumnDef } from '../../components/ui/ResponsiveTable';
 import Modal from '../../components/ui/Modal';
 import { usePermissions } from '../../permissions/usePermissions';
 import { useToast } from '../../context/ToastContext';
-import { getUsers, getRoles, createUser, updateUser, resetUserPassword, deleteUser, getSalespersonLinks, setUserSalespersons } from '../../api/admin';
+import { getUsers, getRoles, createUser, updateUser, resetUserPassword, deleteUser, getSalespersonLinks, setUserSalespersons, copyUserAccess } from '../../api/admin';
+import { useAuth } from '../../context/AuthContext';
 import type { AdminUser, AdminRole, UserSalespersonLinks } from '../../types';
 
 function formatDate(value: string | null) {
@@ -17,6 +18,8 @@ function formatDate(value: string | null) {
 
 export default function AdminUsersPage() {
   const { canCreate, canEdit, canDelete } = usePermissions();
+  const { canCopyAccess } = useAuth();
+  const [copyTarget, setCopyTarget] = useState<AdminUser | null>(null);
   const toast = useToast();
   const [users, setUsers] = useState<AdminUser[]>([]);
   const [roles, setRoles] = useState<AdminRole[]>([]);
@@ -79,6 +82,11 @@ export default function AdminUsersPage() {
           {canEdit && (
             <button className="btn-ghost p-1.5" title="Reset Password" onClick={() => setResetUser(u)}>
               <KeyRound className="h-4 w-4" />
+            </button>
+          )}
+          {canCopyAccess && canEdit && (
+            <button className="btn-ghost p-1.5" title="Copy access from another user" onClick={() => setCopyTarget(u)}>
+              <Copy className="h-4 w-4" />
             </button>
           )}
           {canDelete && (
@@ -149,6 +157,19 @@ export default function AdminUsersPage() {
           onSaved={() => {
             setEditUser(null);
             toast.show({ variant: 'success', title: 'User updated' });
+            load();
+          }}
+        />
+      )}
+
+      {copyTarget && (
+        <CopyAccessModal
+          target={copyTarget}
+          users={users}
+          onClose={() => setCopyTarget(null)}
+          onDone={(message) => {
+            setCopyTarget(null);
+            toast.show({ variant: 'success', title: 'Access copied', description: message });
             load();
           }}
         />
@@ -235,7 +256,8 @@ function AddUserModal({ roles, onClose, onCreated }: { roles: AdminRole[]; onClo
         </div>
         <div>
           <label className="block text-sm font-medium text-ink-secondary mb-1.5">Password</label>
-          <input className="input-field" type="password" value={password} onChange={(e) => setPassword(e.target.value)} required minLength={6} />
+          <input className="input-field" type="password" value={password} onChange={(e) => setPassword(e.target.value)} required minLength={8} />
+          <p className="text-xs text-ink-tertiary mt-1">At least 8 characters with a letter and a number. The user must change it at their next sign-in.</p>
         </div>
         <div>
           <label className="block text-sm font-medium text-ink-secondary mb-1.5">Role</label>
@@ -390,6 +412,55 @@ function ResetPasswordModal({ user, onClose, onDone }: { user: AdminUser; onClos
           <button type="submit" className="btn-primary flex-1" disabled={submitting}>
             {submitting ? 'Resetting…' : 'Reset Password'}
           </button>
+        </div>
+      </form>
+    </Modal>
+  );
+}
+
+function CopyAccessModal({ target, users, onClose, onDone }: { target: AdminUser; users: AdminUser[]; onClose: () => void; onDone: (message: string) => void }) {
+  const [sourceId, setSourceId] = useState('');
+  const [copyLinks, setCopyLinks] = useState(true);
+  const [error, setError] = useState<string | null>(null);
+  const [submitting, setSubmitting] = useState(false);
+  const source = users.find((x) => x.id === Number(sourceId));
+
+  return (
+    <Modal open onClose={onClose} variant="sheet">
+      <form
+        className="p-6 space-y-4"
+        onSubmit={async (e) => {
+          e.preventDefault();
+          if (!source) return;
+          setSubmitting(true);
+          setError(null);
+          try {
+            await copyUserAccess(target.id, source.id, copyLinks);
+            onDone(`${target.username.trim()} now has the same access as ${source.username.trim()}.`);
+          } catch (err: any) {
+            setError(err?.response?.data?.message || err.message);
+          } finally {
+            setSubmitting(false);
+          }
+        }}
+      >
+        <h2 className="text-lg font-semibold text-ink-primary">Copy access to {target.username.trim()}</h2>
+        {error && <div className="bg-danger-bg text-danger text-sm rounded-lg px-3.5 py-2.5">{error}</div>}
+        <div>
+          <label className="block text-sm font-medium text-ink-secondary mb-1.5">Copy from user</label>
+          <select className="input-field" value={sourceId} onChange={(e) => setSourceId(e.target.value)} required>
+            <option value="">Select a user…</option>
+            {users.filter((x) => x.id !== target.id).map((x) => <option key={x.id} value={x.id}>{x.username.trim()} ({x.roleName ?? 'no role'})</option>)}
+          </select>
+        </div>
+        <label className="flex items-center gap-2 text-sm text-ink-secondary">
+          <input type="checkbox" checked={copyLinks} onChange={(e) => setCopyLinks(e.target.checked)} />
+          Also copy the linked SAP salespersons (what data they see)
+        </label>
+        <p className="text-xs text-ink-tertiary">{target.username.trim()} gets {source ? `${source.username.trim()}'s role (${source.roleName ?? 'none'})` : 'the selected user\'s role'}. The password is not copied and nothing else about the account changes.</p>
+        <div className="flex gap-2.5 pt-1">
+          <button type="button" className="btn-secondary flex-1" onClick={onClose}>Cancel</button>
+          <button type="submit" className="btn-primary flex-1" disabled={submitting || !source}>{submitting ? 'Copying…' : 'Copy access'}</button>
         </div>
       </form>
     </Modal>

@@ -20,6 +20,8 @@ interface AuthContextValue {
   logout: () => Promise<void>;
   /// true while the account still has a temporary password: the app shows only the "set a new password" screen.
   mustChangePassword: boolean;
+  /// May copy roles/permissions and user access in Administration (the server enforces it).
+  canCopyAccess: boolean;
   changePassword: (currentPassword: string, newPassword: string) => Promise<void>;
   hasRole: (...roles: string[]) => boolean;
   /// True if the current user's role has the given permission key (e.g.
@@ -57,6 +59,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   const [access, setAccess] = useState<AccessSnapshot>(emptyAccess());
   const [salesScope, setSalesScope] = useState<SalesScope | null>(null);
   const [mustChangePassword, setMustChangePassword] = useState(false);
+  const [canCopyAccess, setCanCopyAccess] = useState(false);
 
   async function loadPermissions() {
     try {
@@ -64,6 +67,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       setAccess(buildAccess(me.isSuperUser, me.permissions, me.pageRules ?? {}));
       setSalesScope(me.salesScope ?? null);
       setMustChangePassword(!!me.mustChangePassword);
+      setCanCopyAccess(!!me.canCopyAccess);
     } catch {
       // Non-fatal — can() just returns false for everything until a retry
       // (e.g. next login) succeeds; the backend still enforces independently.
@@ -123,6 +127,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       setAccess(emptyAccess());
       setSalesScope(null);
       setMustChangePassword(false);
+      setCanCopyAccess(false);
     }
   }
 
@@ -151,6 +156,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
         login,
         logout,
         mustChangePassword,
+        canCopyAccess,
         changePassword,
         hasRole,
         can,
