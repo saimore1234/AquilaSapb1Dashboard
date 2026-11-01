@@ -116,28 +116,31 @@ public class SqlSalesReportsService : ISalesReportsService
     }
 
     // ---------------------------------------------------------------
-    // CUSTOMER OUTSTANDING — open A/R invoices aged from their posting date
-    // against 60-day credit terms.
+    // CUSTOMER OUTSTANDING — SAP's own customer receivables: the open balance of every customer-account journal line
+    // (JDT1.BalDueDeb - BalDueCred), so invoices, credit memos, on-account receipts and journal entries all count and the
+    // total equals the customers' SAP balance (OCRD.Balance / the A/R ageing report). Each open line is aged from its
+    // posting date against 60-day credit terms; credits and on-account receipts fall in the bucket of their own date.
     // ---------------------------------------------------------------
     public async Task<CustomerOutstandingDto> GetCustomerOutstandingAsync(CancellationToken ct = default)
     {
         using var db = _connectionFactory.CreateConnection();
         var today = DateTime.Today;
 
-        const string sql = @"
-            SELECT h.CardCode AS CustomerCode, MAX(h.CardName) AS CustomerName, MAX(s.SlpName) AS SalesPerson,
-                   ISNULL(SUM(CASE WHEN DATEDIFF(DAY, h.DocDate, @Today) <= 30 THEN h.DocTotal - h.PaidToDate END), 0) AS Days0To30,
-                   ISNULL(SUM(CASE WHEN DATEDIFF(DAY, h.DocDate, @Today) BETWEEN 31 AND 60 THEN h.DocTotal - h.PaidToDate END), 0) AS Days31To60,
-                   ISNULL(SUM(CASE WHEN DATEDIFF(DAY, h.DocDate, @Today) BETWEEN 61 AND 90 THEN h.DocTotal - h.PaidToDate END), 0) AS Days61To90,
-                   ISNULL(SUM(CASE WHEN DATEDIFF(DAY, h.DocDate, @Today) > 90 THEN h.DocTotal - h.PaidToDate END), 0) AS Days90Plus,
-                   SUM(h.DocTotal - h.PaidToDate) AS Total,
-                   MAX(DATEDIFF(DAY, h.DocDueDate, @Today)) AS OverdueDays
-            FROM OINV h
-            LEFT JOIN OCRD c ON c.CardCode = h.CardCode
+        var sql = @"
+            SELECT c.CardCode AS CustomerCode, MAX(c.CardName) AS CustomerName, MAX(s.SlpName) AS SalesPerson,
+                   ISNULL(SUM(CASE WHEN DATEDIFF(DAY, j.RefDate, @Today) <= 30 THEN j.BalDueDeb - j.BalDueCred END), 0) AS Days0To30,
+                   ISNULL(SUM(CASE WHEN DATEDIFF(DAY, j.RefDate, @Today) BETWEEN 31 AND 60 THEN j.BalDueDeb - j.BalDueCred END), 0) AS Days31To60,
+                   ISNULL(SUM(CASE WHEN DATEDIFF(DAY, j.RefDate, @Today) BETWEEN 61 AND 90 THEN j.BalDueDeb - j.BalDueCred END), 0) AS Days61To90,
+                   ISNULL(SUM(CASE WHEN DATEDIFF(DAY, j.RefDate, @Today) > 90 THEN j.BalDueDeb - j.BalDueCred END), 0) AS Days90Plus,
+                   SUM(j.BalDueDeb - j.BalDueCred) AS Total,
+                   MAX(CASE WHEN j.BalDueDeb > j.BalDueCred THEN DATEDIFF(DAY, j.DueDate, @Today) END) AS OverdueDays
+            FROM JDT1 j
+            JOIN OCRD c ON c.CardCode = j.ShortName AND c.CardType = 'C'
             LEFT JOIN OSLP s ON s.SlpCode = c.SlpCode
-            WHERE h.CANCELED = 'N' AND h.DocStatus = 'O' AND h.DocTotal - h.PaidToDate > 0
-            GROUP BY h.CardCode
-            ORDER BY SUM(h.DocTotal - h.PaidToDate) DESC";
+            WHERE j.BalDueDeb <> j.BalDueCred" + SalesScopeSql.CustomerPredicate(_scope.Current, "c") + @"
+            GROUP BY c.CardCode
+            HAVING SUM(j.BalDueDeb - j.BalDueCred) <> 0
+            ORDER BY SUM(j.BalDueDeb - j.BalDueCred) DESC";
 
         var all = (await db.QueryAsync<CustomerAgeingRowDto>(new CommandDefinition(sql, new { Today = today }, cancellationToken: ct))).ToList();
 

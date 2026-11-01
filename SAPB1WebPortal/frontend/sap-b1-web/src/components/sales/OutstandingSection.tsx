@@ -11,7 +11,7 @@ import { useSalesRefresh } from './salesRefresh';
 
 const BUCKET_COLORS = ['#3d60a5', '#7f9bd3', '#e09f3e', '#c0392b'];
 
-/** Receivables aged from posting date against 60-day credit terms, plus per-customer risk. */
+/** SAP customer receivables aged from posting date against 60-day credit terms, plus per-customer risk. */
 export default function OutstandingSection({ reportTo }: { reportTo?: string }) {
   const { axisColor, gridColor, tooltipStyle } = useChartTheme();
   const [data, setData] = useState<CustomerOutstanding | null>(null);
@@ -147,7 +147,7 @@ export default function OutstandingSection({ reportTo }: { reportTo?: string }) 
           </div>
         </div>
       </div>
-      <p className="text-xs text-ink-tertiary">Overdue days = today minus the due date of the customer's oldest unpaid invoice (negative = not yet due). Risk is High when 25% or more of a customer's balance is older than {data?.creditTermsDays ?? 60} days, Watch when any is, otherwise Low.</p>
+      <p className="text-xs text-ink-tertiary">Balances are the customers' SAP receivables (invoices less credit memos, on-account receipts and journal entries) and total to the SAP customer balance. Overdue days = today minus the due date of the customer's oldest unpaid invoice (negative = not yet due). Risk is High when 25% or more of a customer's balance is older than {data?.creditTermsDays ?? 60} days, Watch when any is, otherwise Low.</p>
     </section>
   );
 }
