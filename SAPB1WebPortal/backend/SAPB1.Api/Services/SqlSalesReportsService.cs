@@ -118,7 +118,7 @@ public class SqlSalesReportsService : ISalesReportsService
     // ---------------------------------------------------------------
     // CUSTOMER OUTSTANDING — SAP's own customer receivables: the open balance of every customer-account journal line
     // (JDT1.BalDueDeb - BalDueCred), so invoices, credit memos, on-account receipts and journal entries all count and the
-    // total equals the customers' SAP balance (OCRD.Balance / the A/R ageing report). Each open line is aged from its
+    // total equals the customers' SAP balance (OCRD.Balance / the A/R ageing report). Customers whose net balance is zero stay in the bucket totals, as in SAP. Each open line is aged from its
     // posting date against 60-day credit terms; credits and on-account receipts fall in the bucket of their own date.
     // ---------------------------------------------------------------
     public async Task<CustomerOutstandingDto> GetCustomerOutstandingAsync(CancellationToken ct = default)
@@ -139,7 +139,6 @@ public class SqlSalesReportsService : ISalesReportsService
             LEFT JOIN OSLP s ON s.SlpCode = c.SlpCode
             WHERE j.BalDueDeb <> j.BalDueCred" + SalesScopeSql.CustomerPredicate(_scope.Current, "c") + @"
             GROUP BY c.CardCode
-            HAVING SUM(j.BalDueDeb - j.BalDueCred) <> 0
             ORDER BY SUM(j.BalDueDeb - j.BalDueCred) DESC";
 
         var all = (await db.QueryAsync<CustomerAgeingRowDto>(new CommandDefinition(sql, new { Today = today }, cancellationToken: ct))).ToList();
@@ -155,9 +154,9 @@ public class SqlSalesReportsService : ISalesReportsService
             AsOf = today,
             CreditTermsDays = 60,
             Total = all.Sum(x => x.Total),
-            CustomerCount = all.Count,
+            CustomerCount = all.Count(x => x.Total != 0),
             Overdue = all.Sum(x => x.Days61To90 + x.Days90Plus),
-            OverdueCustomerCount = all.Count(x => x.Days61To90 + x.Days90Plus > 0),
+            OverdueCustomerCount = all.Count(x => x.Total != 0 && x.Days61To90 + x.Days90Plus > 0),
             Buckets =
             {
                 new AgeingBucketDto { Label = "0–30", Value = all.Sum(x => x.Days0To30) },
@@ -165,7 +164,7 @@ public class SqlSalesReportsService : ISalesReportsService
                 new AgeingBucketDto { Label = "61–90", Value = all.Sum(x => x.Days61To90) },
                 new AgeingBucketDto { Label = "90+", Value = all.Sum(x => x.Days90Plus) }
             },
-            Customers = all.Take(15).ToList()
+            Customers = all.Where(x => x.Total != 0).Take(15).ToList()
         };
         dto.Current = dto.Total - dto.Overdue;
         return dto;
