@@ -19,11 +19,19 @@ export default function OutstandingSection({ reportTo }: { reportTo?: string }) 
   const [error, setError] = useState<string | null>(null);
   const { tick, markUpdated } = useSalesRefresh();
   const seenTick = useRef(tick);
+  // The report page (no "view report" link) lists every customer and can be searched; the dashboard card stays the compact top 15.
+  const full = !reportTo;
+  const [search, setSearch] = useState('');
+  const [query, setQuery] = useState('');
+  useEffect(() => {
+    const h = setTimeout(() => setQuery(search.trim()), 350);
+    return () => clearTimeout(h);
+  }, [search]);
 
   function load(silent = false) {
     if (!silent) setLoading(true);
     setError(null);
-    getCustomerOutstanding()
+    getCustomerOutstanding({ search: full ? query : undefined, all: full })
       .then((d) => {
         setData(d);
         markUpdated();
@@ -36,7 +44,7 @@ export default function OutstandingSection({ reportTo }: { reportTo?: string }) 
     seenTick.current = tick;
     load(refreshed);
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [tick]);
+  }, [tick, query]);
 
   if (error) return <div className="card"><ErrorState message={error} onRetry={() => load()} /></div>;
 
@@ -101,9 +109,21 @@ export default function OutstandingSection({ reportTo }: { reportTo?: string }) 
         <div className="card p-0 overflow-hidden xl:col-span-3">
           <div className="px-4 py-3 border-b border-border">
             <h3 className="text-sm font-semibold text-ink-primary">Customer-wise Ageing</h3>
-            <p className="text-xs text-ink-tertiary">Top 15 outstanding accounts · select a customer for the ledger</p>
+            <p className="text-xs text-ink-tertiary">
+              {full ? `${data ? data.customers.length : 0} customer${data && data.customers.length === 1 ? '' : 's'}${query ? ' matching your search' : ''}` : 'Top 15 outstanding accounts'} · select a customer for the ledger
+            </p>
+            {full && (
+              <input
+                type="search"
+                className="input-field mt-2 max-w-sm text-sm py-1.5"
+                placeholder="Search customer name or code…"
+                value={search}
+                onChange={(e) => setSearch(e.target.value)}
+                aria-label="Search customer"
+              />
+            )}
           </div>
-          <div className="overflow-x-auto">
+          <div className={`overflow-x-auto ${full ? 'max-h-[640px] overflow-y-auto' : ''}`}>
             <table className="w-full text-sm">
               <thead>
                 <tr className="text-left text-xs uppercase tracking-wide text-ink-tertiary border-b border-border">

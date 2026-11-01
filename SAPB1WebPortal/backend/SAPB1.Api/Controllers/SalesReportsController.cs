@@ -31,8 +31,8 @@ public class SalesReportsController : ControllerBase
     }
 
     [HttpGet("customer-outstanding")]
-    public async Task<ActionResult<ApiResponse<CustomerOutstandingDto>>> GetCustomerOutstanding(CancellationToken ct)
-        => Ok(ApiResponse<CustomerOutstandingDto>.Ok(await _reports.GetCustomerOutstandingAsync(ct)));
+    public async Task<ActionResult<ApiResponse<CustomerOutstandingDto>>> GetCustomerOutstanding([FromQuery] string? search, [FromQuery] bool all, CancellationToken ct)
+        => Ok(ApiResponse<CustomerOutstandingDto>.Ok(await _reports.GetCustomerOutstandingAsync(search, all, ct)));
 
     [HttpGet("customer-lookup")]
     public async Task<ActionResult<ApiResponse<List<CustomerLookupDto>>>> LookupCustomers([FromQuery] string? search, CancellationToken ct)

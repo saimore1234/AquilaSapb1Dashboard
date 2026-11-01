@@ -121,10 +121,11 @@ public class SqlSalesReportsService : ISalesReportsService
     // total equals the customers' SAP balance (OCRD.Balance / the A/R ageing report). Customers whose net balance is zero stay in the bucket totals, as in SAP. Each open line is aged from its
     // posting date against 60-day credit terms; credits and on-account receipts fall in the bucket of their own date.
     // ---------------------------------------------------------------
-    public async Task<CustomerOutstandingDto> GetCustomerOutstandingAsync(CancellationToken ct = default)
+    public async Task<CustomerOutstandingDto> GetCustomerOutstandingAsync(string? search = null, bool all = false, CancellationToken ct = default)
     {
         using var db = _connectionFactory.CreateConnection();
         var today = DateTime.Today;
+        var like = string.IsNullOrWhiteSpace(search) ? null : $"%{search.Trim()}%";
 
         var sql = @"
             SELECT c.CardCode AS CustomerCode, MAX(c.CardName) AS CustomerName, MAX(s.SlpName) AS SalesPerson,
@@ -137,13 +138,13 @@ public class SqlSalesReportsService : ISalesReportsService
             FROM JDT1 j
             JOIN OCRD c ON c.CardCode = j.ShortName AND c.CardType = 'C'
             LEFT JOIN OSLP s ON s.SlpCode = c.SlpCode
-            WHERE j.BalDueDeb <> j.BalDueCred" + SalesScopeSql.CustomerPredicate(_scope.Current, "c") + @"
+            WHERE j.BalDueDeb <> j.BalDueCred AND (@Like IS NULL OR c.CardCode LIKE @Like OR c.CardName LIKE @Like)" + SalesScopeSql.CustomerPredicate(_scope.Current, "c") + @"
             GROUP BY c.CardCode
             ORDER BY SUM(j.BalDueDeb - j.BalDueCred) DESC";
 
-        var all = (await db.QueryAsync<CustomerAgeingRowDto>(new CommandDefinition(sql, new { Today = today }, cancellationToken: ct))).ToList();
+        var rows = (await db.QueryAsync<CustomerAgeingRowDto>(new CommandDefinition(sql, new { Today = today, Like = like }, cancellationToken: ct))).ToList();
 
-        foreach (var c in all)
+        foreach (var c in rows)
         {
             var overdue = c.Days61To90 + c.Days90Plus;
             c.Risk = c.Total > 0 && overdue / c.Total >= 0.25m ? "High" : overdue > 0 ? "Watch" : "Low";
@@ -153,18 +154,18 @@ public class SqlSalesReportsService : ISalesReportsService
         {
             AsOf = today,
             CreditTermsDays = 60,
-            Total = all.Sum(x => x.Total),
-            CustomerCount = all.Count(x => x.Total != 0),
-            Overdue = all.Sum(x => x.Days61To90 + x.Days90Plus),
-            OverdueCustomerCount = all.Count(x => x.Total != 0 && x.Days61To90 + x.Days90Plus > 0),
+            Total = rows.Sum(x => x.Total),
+            CustomerCount = rows.Count(x => x.Total != 0),
+            Overdue = rows.Sum(x => x.Days61To90 + x.Days90Plus),
+            OverdueCustomerCount = rows.Count(x => x.Total != 0 && x.Days61To90 + x.Days90Plus > 0),
             Buckets =
             {
-                new AgeingBucketDto { Label = "0–30", Value = all.Sum(x => x.Days0To30) },
-                new AgeingBucketDto { Label = "31–60", Value = all.Sum(x => x.Days31To60) },
-                new AgeingBucketDto { Label = "61–90", Value = all.Sum(x => x.Days61To90) },
-                new AgeingBucketDto { Label = "90+", Value = all.Sum(x => x.Days90Plus) }
+                new AgeingBucketDto { Label = "0–30", Value = rows.Sum(x => x.Days0To30) },
+                new AgeingBucketDto { Label = "31–60", Value = rows.Sum(x => x.Days31To60) },
+                new AgeingBucketDto { Label = "61–90", Value = rows.Sum(x => x.Days61To90) },
+                new AgeingBucketDto { Label = "90+", Value = rows.Sum(x => x.Days90Plus) }
             },
-            Customers = all.Where(x => x.Total != 0).Take(15).ToList()
+            Customers = rows.Where(x => x.Total != 0).Take(all ? 5000 : 15).ToList()
         };
         dto.Current = dto.Total - dto.Overdue;
         return dto;

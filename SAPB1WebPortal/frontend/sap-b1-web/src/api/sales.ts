@@ -87,8 +87,11 @@ export const getOpenSalesOrdersBoard = (params: { filter?: string; search?: stri
 export const getInvoiceRegister = (query: InvoiceRegisterQuery) =>
   unwrap<InvoiceRegister>(apiClient.get('/sales/reports/invoice-register', { params: query }), 'Failed to load the invoice register.');
 
-export const getCustomerOutstanding = () =>
-  unwrap<CustomerOutstanding>(apiClient.get('/sales/reports/customer-outstanding'), 'Failed to load customer outstanding.');
+export const getCustomerOutstanding = (opts?: { search?: string; all?: boolean }) =>
+  unwrap<CustomerOutstanding>(
+    apiClient.get('/sales/reports/customer-outstanding', { params: { search: opts?.search || undefined, all: opts?.all || undefined } }),
+    'Failed to load customer outstanding.'
+  );
 
 export const lookupSalesCustomers = (search: string) =>
   unwrap<CustomerLookup[]>(apiClient.get('/sales/reports/customer-lookup', { params: { search } }), 'Failed to search customers.');

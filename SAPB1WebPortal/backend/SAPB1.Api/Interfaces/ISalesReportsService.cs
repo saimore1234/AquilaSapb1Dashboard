@@ -6,7 +6,7 @@ namespace SAPB1.Api.Interfaces;
 public interface ISalesReportsService
 {
     Task<InvoiceRegisterDto> GetInvoiceRegisterAsync(InvoiceRegisterQuery query, CancellationToken ct = default);
-    Task<CustomerOutstandingDto> GetCustomerOutstandingAsync(CancellationToken ct = default);
+    Task<CustomerOutstandingDto> GetCustomerOutstandingAsync(string? search = null, bool all = false, CancellationToken ct = default);
     Task<List<CustomerLookupDto>> LookupCustomersAsync(string? search, CancellationToken ct = default);
     Task<CustomerLedgerDto?> GetCustomerLedgerAsync(string customer, DateTime? from, DateTime? to, CancellationToken ct = default);
     Task<SalesAnalyticsOptionsDto> GetAnalyticsOptionsAsync(CancellationToken ct = default);
