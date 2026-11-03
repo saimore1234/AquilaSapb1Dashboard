@@ -8,6 +8,8 @@ reuse the exact same endpoints — nothing here is web-only.
 Sales, Purchase, Finance, global search, and any write operations are intentionally deferred
 to later phases (see "Roadmap" below), per the project's own phased plan.
 
+> **Hosting on your own Windows Server (IIS)?** See [`deployment/windows-server/SERVER_DEPLOYMENT_GUIDE.md`](deployment/windows-server/SERVER_DEPLOYMENT_GUIDE.md) (deployment script, IIS configuration, database setup, rollback and troubleshooting guides).
+
 ---
 
 ## 1. Requirements

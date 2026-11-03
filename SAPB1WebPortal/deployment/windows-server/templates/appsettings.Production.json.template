@@ -1,0 +1,30 @@
+{
+  "// README": "Copy to D:\\AquilaDashboard\\Backend\\appsettings.Production.json and edit. Non-secret, server-specific settings only. The deployment script never overwrites this file. Do NOT put passwords, connection strings or the JWT key here - use scripts\\Set-AquilaSecrets.ps1.",
+
+  "Logging": {
+    "LogLevel": {
+      "Default": "Information",
+      "Microsoft.AspNetCore": "Warning",
+      "Microsoft.Data.SqlClient": "Warning"
+    }
+  },
+
+  "// Hosting": "TrustedProxies: only these addresses may set X-Forwarded-For / X-Forwarded-Proto (IIS ARR on this server connects from loopback). HttpsRedirection stays false because TLS ends at the IIS site and the API listens on 127.0.0.1 only. LogRetainedFiles = days of API logs kept.",
+  "Hosting": {
+    "TrustedProxies": [ "127.0.0.1", "::1" ],
+    "HttpsRedirection": false,
+    "LogRetainedFiles": 31
+  },
+
+  "// RateLimiting": "Per client IP, per minute. LoginPerMinute guards /api/auth/login (the account lockout still applies on top).",
+  "RateLimiting": {
+    "Enabled": true,
+    "PermitPerMinute": 1200,
+    "LoginPerMinute": 20
+  },
+
+  "// Cors": "The web app is served from the same origin as /api, so no browser origin is needed for it. Keep capacitor://localhost only if the installed mobile app is still used; list the public HTTPS address of this dashboard as well.",
+  "Cors": {
+    "AllowedOrigins": [ "https://dashboard.companydomain.com", "capacitor://localhost" ]
+  }
+}

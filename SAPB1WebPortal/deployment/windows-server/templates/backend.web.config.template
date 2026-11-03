@@ -1,0 +1,29 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  web.config for the ASP.NET Core API (in-process hosting under IIS). Copied over the one `dotnet publish` generates by the deployment script;
+  {{ROOT}} is replaced with the deployment root (default D:\AquilaDashboard).
+
+  Only NON-SECRET settings belong here. Secrets (Jwt__Key, SQL connection strings, portal login hash) are stored as application-pool environment
+  variables by scripts\Set-AquilaSecrets.ps1 and are never written to this file or to the source tree.
+  Server-specific, non-secret overrides (allowed origins, trusted proxies) live in appsettings.Production.json, which the deployment script never overwrites.
+-->
+<configuration>
+  <location path="." inheritInChildApplications="false">
+    <system.webServer>
+      <handlers>
+        <add name="aspNetCore" path="*" verb="*" modules="AspNetCoreModuleV2" resourceType="Unspecified" />
+      </handlers>
+      <aspNetCore processPath="dotnet" arguments=".\SAPB1.Api.dll" stdoutLogEnabled="false" stdoutLogFile="{{ROOT}}\Logs\stdout\stdout" hostingModel="inprocess" startupTimeLimit="120">
+        <environmentVariables>
+          <environmentVariable name="ASPNETCORE_ENVIRONMENT" value="Production" />
+          <environmentVariable name="Hosting__LogFilePath" value="{{ROOT}}\Logs\api\sapb1-api-.log" />
+          <environmentVariable name="DataProtection__KeysDirectory" value="{{ROOT}}\Keys" />
+          <environmentVariable name="PrintWorker__ExePath" value="{{ROOT}}\Backend\PrintWorker\SAPB1.PrintWorker.exe" />
+        </environmentVariables>
+      </aspNetCore>
+      <security>
+        <requestFiltering removeServerHeader="true" />
+      </security>
+    </system.webServer>
+  </location>
+</configuration>
