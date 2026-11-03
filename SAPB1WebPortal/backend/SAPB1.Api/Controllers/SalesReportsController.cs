@@ -40,12 +40,12 @@ public class SalesReportsController : ControllerBase
 
     [HttpGet("customer-ledger")]
     public async Task<ActionResult<ApiResponse<CustomerLedgerDto>>> GetCustomerLedger(
-        [FromQuery] string customer, [FromQuery] DateTime? dateFrom, [FromQuery] DateTime? dateTo, CancellationToken ct)
+        [FromQuery] string customer, [FromQuery] DateTime? dateFrom, [FromQuery] DateTime? dateTo, CancellationToken ct, [FromQuery] bool full = false)
     {
         if (string.IsNullOrWhiteSpace(customer))
             return BadRequest(ApiResponse<CustomerLedgerDto>.Fail("A customer code is required."));
         if (InvalidRange(dateFrom, dateTo)) return BadRequest(ApiResponse<CustomerLedgerDto>.Fail("From Date must be on or before To Date."));
-        var result = await _reports.GetCustomerLedgerAsync(customer, dateFrom, dateTo, ct);
+        var result = await _reports.GetCustomerLedgerAsync(customer, dateFrom, dateTo, ct, full);
         return result is null
             ? NotFound(ApiResponse<CustomerLedgerDto>.Fail("Customer not found."))
             : Ok(ApiResponse<CustomerLedgerDto>.Ok(result));
@@ -114,7 +114,7 @@ public class SalesReportsController : ControllerBase
     {
         if (query.PageSize is < 1 or > 5000 || query.Page < 1) return BadRequest(ApiResponse<LostCustomerReportDto>.Fail("Invalid paging."));
         if (query.MinPreviousSales is < 0) return BadRequest(ApiResponse<LostCustomerReportDto>.Fail("Minimum previous-year sales can't be negative."));
-        if (!string.IsNullOrWhiteSpace(query.FinancialYear) && !System.Text.RegularExpressions.Regex.IsMatch(query.FinancialYear.Trim(), @"^d{4}-d{2}$"))
+        if (!string.IsNullOrWhiteSpace(query.FinancialYear) && !System.Text.RegularExpressions.Regex.IsMatch(query.FinancialYear.Trim(), @"^\d{4}-\d{2}$"))
             return BadRequest(ApiResponse<LostCustomerReportDto>.Fail("Financial year must look like 2026-27."));
         return Ok(ApiResponse<LostCustomerReportDto>.Ok(await _detail.GetLostCustomersAsync(query, ct)));
     }

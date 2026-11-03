@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useState, type ReactNode } from 'react';
 import { Link, useParams } from 'react-router-dom';
 import { ArrowLeft } from 'lucide-react';
 import type { LucideIcon } from 'lucide-react';
@@ -46,6 +46,8 @@ interface SalesDocumentDetailProps<T extends DetailBase> {
   subtitle?: (doc: T) => string | null | undefined;
   extraFields: (doc: T) => ExtraField[];
   extraStatCards?: (doc: T) => ExtraStatCard[];
+  /** Extra content rendered between the Items table and the Document Flow (e.g. payment details). */
+  extraSections?: (doc: T) => ReactNode;
 }
 
 function formatDate(value: string | null | undefined) {
@@ -79,7 +81,8 @@ export default function SalesDocumentDetail<T extends DetailBase>({
   title,
   subtitle,
   extraFields,
-  extraStatCards
+  extraStatCards,
+  extraSections
 }: SalesDocumentDetailProps<T>) {
   const { docEntry: docEntryParam = '' } = useParams();
   const docEntry = Number(docEntryParam);
@@ -106,6 +109,9 @@ export default function SalesDocumentDetail<T extends DetailBase>({
   const currency = doc.currency;
   const hasQtyTracking = doc.lines.some((l) => l.deliveredQuantity != null || l.orderedQuantity != null);
   const hasAroma = doc.lines.some((l) => !!l.aromaCode);
+  const hasUom = doc.lines.some((l) => l.uom != null);
+  const hasLineTax = doc.lines.some((l) => l.taxAmount != null);
+  const hasDiscount = doc.lines.some((l) => l.discountPercent !== 0);
 
   return (
     <div className="space-y-6 max-w-4xl">
@@ -164,7 +170,9 @@ export default function SalesDocumentDetail<T extends DetailBase>({
                   <th className="px-4 py-2.5 font-medium hidden md:table-cell">Warehouse</th>
                   <th className="px-4 py-2.5 font-medium text-right">Quantity</th>
                   {hasQtyTracking && <th className="px-4 py-2.5 font-medium text-right hidden md:table-cell">Delivered</th>}
+                  {hasUom && <th className="px-4 py-2.5 font-medium hidden md:table-cell">UOM</th>}
                   <th className="px-4 py-2.5 font-medium text-right hidden lg:table-cell">Price</th>
+                  {hasUom && <th className="px-4 py-2.5 font-medium text-right hidden lg:table-cell">Discount</th>}
                   <th className="px-4 py-2.5 font-medium hidden lg:table-cell">Tax</th>
                   <th className="px-4 py-2.5 font-medium text-right">Line Total</th>
                 </tr>
@@ -192,8 +200,13 @@ export default function SalesDocumentDetail<T extends DetailBase>({
                         {l.deliveredQuantity != null ? l.deliveredQuantity.toLocaleString() : '—'}
                       </td>
                     )}
+                    {hasUom && <td className="px-4 py-2.5 hidden md:table-cell text-ink-secondary">{l.uom || '—'}</td>}
                     <td className="px-4 py-2.5 text-right tabular-nums hidden lg:table-cell">{formatMoney(l.price, currency)}</td>
-                    <td className="px-4 py-2.5 hidden lg:table-cell text-ink-secondary">{l.taxCode || '—'}</td>
+                    {hasUom && <td className="px-4 py-2.5 text-right tabular-nums hidden lg:table-cell text-ink-secondary">{hasDiscount ? `${l.discountPercent.toLocaleString(undefined, { maximumFractionDigits: 2 })}%` : '—'}</td>}
+                    <td className="px-4 py-2.5 hidden lg:table-cell text-ink-secondary">
+                      {l.taxCode || '—'}
+                      {hasLineTax && l.taxAmount != null && <span className="block text-xs text-ink-tertiary tabular-nums">{formatMoney(l.taxAmount, currency)}</span>}
+                    </td>
                     <td className="px-4 py-2.5 text-right tabular-nums font-medium">{formatMoney(l.lineTotal, currency)}</td>
                   </tr>
                 ))}
@@ -225,6 +238,8 @@ export default function SalesDocumentDetail<T extends DetailBase>({
           </div>
         </div>
       )}
+
+      {extraSections?.(doc)}
 
       <div className="card">
         <h2 className="font-semibold text-ink-primary mb-4">Document Flow</h2>

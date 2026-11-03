@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState } from 'react';
 import { useSearchParams } from 'react-router-dom';
-import { Download, Search } from 'lucide-react';
+import { Download, FileText, Search } from 'lucide-react';
 import { getCustomerLedger, lookupSalesCustomers } from '../../api/sales';
 import type { CustomerLedger, CustomerLookup } from '../../types';
 import { ErrorState } from '../StateViews';
@@ -10,6 +10,7 @@ import { downloadCsv } from './salesUtils';
 import { useSalesFilters } from './salesFilters';
 import { useSalesRefresh } from './salesRefresh';
 import { usePermissions } from '../../permissions/usePermissions';
+import { useAuth } from '../../context/AuthContext';
 
 const money = (v: number) => (v ? inr.format(v) : '—');
 /** Ledger balances are debit-positive; show Dr/Cr so a credit balance isn't mistaken for zero. */
@@ -22,6 +23,8 @@ const bal = (v: number) => `${inr.format(Math.abs(v))} ${v < 0 ? 'Cr' : 'Dr'}`;
  */
 export default function LedgerSection({ reportTo }: { reportTo?: string }) {
   const { canExport } = usePermissions();
+  const { user } = useAuth();
+  const [pdfBusy, setPdfBusy] = useState(false);
   const [params, setParams] = useSearchParams();
   const customer = params.get('customer') ?? '';
   const { applied } = useSalesFilters();
@@ -87,6 +90,21 @@ export default function LedgerSection({ reportTo }: { reportTo?: string }) {
     );
   }
 
+  async function exportPdf() {
+    if (!data || pdfBusy) return;
+    setPdfBusy(true);
+    try {
+      // The on-screen ledger is capped at 1,000 postings; the statement asks for all of them (same period, same balances).
+      const full = await getCustomerLedger({ customer, dateFrom: from, dateTo: to, full: true });
+      const { downloadLedgerPdf } = await import('./ledgerPdf');
+      await downloadLedgerPdf(full, user?.companyName);
+    } catch (err) {
+      setError((err as Error)?.message || 'Unable to create the PDF.');
+    } finally {
+      setPdfBusy(false);
+    }
+  }
+
   const input = 'px-3 py-2 text-sm rounded-lg border border-border-strong bg-surface text-ink-primary';
   const utilised = data && data.creditLimit > 0 ? (data.currentBalance / data.creditLimit) * 100 : null;
 
@@ -122,9 +140,14 @@ export default function LedgerSection({ reportTo }: { reportTo?: string }) {
             )}
           </div>
           {canExport && (
-            <button className="btn-secondary ml-auto" onClick={exportCsv} disabled={!data}>
-              <Download className="h-4 w-4" /> Download CSV
-            </button>
+            <div className="ml-auto flex items-center gap-2">
+              <button className="btn-secondary" onClick={exportCsv} disabled={!data}>
+                <Download className="h-4 w-4" /> Download CSV
+              </button>
+              <button className="btn-secondary" onClick={exportPdf} disabled={!data || pdfBusy}>
+                <FileText className="h-4 w-4" /> {pdfBusy ? 'Preparing PDF…' : 'Download PDF'}
+              </button>
+            </div>
           )}
         </div>
 

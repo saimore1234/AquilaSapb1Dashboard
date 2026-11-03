@@ -19,6 +19,10 @@ public class SalesDocumentLineDto
     public decimal DiscountPercent { get; set; }
     public string? TaxCode { get; set; }
     public decimal LineTotal { get; set; }
+    /// <summary>Unit of measure (INV1.unitMsr); populated on A/R invoice lines only.</summary>
+    public string? Uom { get; set; }
+    /// <summary>Tax amount of the line (INV1.VatSum); populated on A/R invoice lines only.</summary>
+    public decimal? TaxAmount { get; set; }
 }
 
 /// <summary>

@@ -121,6 +121,16 @@ public class CustomerLedgerDto
     public decimal CreditLimit { get; set; }
     /// <summary>Current account balance (OCRD.Balance) — what the credit limit is measured against.</summary>
     public decimal CurrentBalance { get; set; }
+    /// <summary>Customer's default bill-to address (CRD1) — for the printed statement.</summary>
+    public string? Address { get; set; }
+    /// <summary>GST registration of the default bill-to address (CRD1.GSTRegnNo), falling back to the master tax id.</summary>
+    public string? Gstin { get; set; }
+    public string? CompanyName { get; set; }
+    public string? CompanyAddress { get; set; }
+    /// <summary>GSTIN of the company (OADM tax id, else the first branch's).</summary>
+    public string? CompanyGstin { get; set; }
+    /// <summary>True when more postings exist than were returned (the default view caps at 1,000, so the closing balance is only that of the rows shown).</summary>
+    public bool Truncated { get; set; }
     public List<LedgerRowDto> Rows { get; set; } = new();
 }
 

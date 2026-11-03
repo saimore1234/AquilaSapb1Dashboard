@@ -96,7 +96,8 @@ export const getCustomerOutstanding = (opts?: { search?: string; all?: boolean }
 export const lookupSalesCustomers = (search: string) =>
   unwrap<CustomerLookup[]>(apiClient.get('/sales/reports/customer-lookup', { params: { search } }), 'Failed to search customers.');
 
-export const getCustomerLedger = (params: { customer: string; dateFrom?: string; dateTo?: string }) =>
+/** `full` returns every posting plus the statement address / GSTIN details (used by the PDF); the default view is capped at 1,000 postings. */
+export const getCustomerLedger = (params: { customer: string; dateFrom?: string; dateTo?: string; full?: boolean }) =>
   unwrap<CustomerLedger>(apiClient.get('/sales/reports/customer-ledger', { params }), 'Customer not found.');
 
 export const getTurnoverBreakup = (params: TurnoverQuery) =>

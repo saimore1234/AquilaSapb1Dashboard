@@ -198,7 +198,7 @@ public class SqlSalesReportsService : ISalesReportsService
         _ => "Document"
     };
 
-    public async Task<CustomerLedgerDto?> GetCustomerLedgerAsync(string customer, DateTime? from, DateTime? to, CancellationToken ct = default)
+    public async Task<CustomerLedgerDto?> GetCustomerLedgerAsync(string customer, DateTime? from, DateTime? to, CancellationToken ct = default, bool full = false)
     {
         using var db = _connectionFactory.CreateConnection();
         var today = DateTime.Today;
@@ -215,18 +215,23 @@ public class SqlSalesReportsService : ISalesReportsService
             new { Customer = customer, From = dateFrom }, cancellationToken: ct));
 
         var lines = (await db.QueryAsync(new CommandDefinition(@"
-            SELECT TOP 1000 RefDate, TransType, BaseRef, LineMemo, Debit, Credit
+            SELECT TOP (@Cap) RefDate, TransType, BaseRef, LineMemo, Debit, Credit
             FROM JDT1
             WHERE ShortName = @Customer AND RefDate >= @From AND RefDate <= @To
             ORDER BY RefDate, TransId, Line_ID",
-            new { Customer = customer, From = dateFrom, To = dateTo }, cancellationToken: ct))).ToList();
+            new { Customer = customer, From = dateFrom, To = dateTo, Cap = (full ? 50000 : 1000) + 1 }, cancellationToken: ct))).ToList();
+        // One extra row is fetched only to learn whether the cap cut the list short.
+        var cap = full ? 50000 : 1000;
+        var truncated = lines.Count > cap;
+        if (truncated) lines = lines.Take(cap).ToList();
 
         var dto = new CustomerLedgerDto
         {
             CustomerCode = header.CardCode, CustomerName = header.CardName, City = header.City, TaxNo = header.LicTradNum,
             DateFrom = dateFrom, DateTo = dateTo, OpeningBalance = opening,
-            CreditLimit = header.CreditLine, CurrentBalance = header.Balance
+            CreditLimit = header.CreditLine, CurrentBalance = header.Balance, Truncated = truncated
         };
+        if (full) await FillStatementDetailsAsync(db, dto, ct);
 
         var running = opening;
         foreach (var l in lines)
@@ -246,6 +251,35 @@ public class SqlSalesReportsService : ISalesReportsService
         }
         dto.ClosingBalance = running;
         return dto;
+    }
+
+    /// <summary>Company and customer address / GSTIN for the printed statement. Best effort: a missing table or column leaves the field empty.</summary>
+    private static async Task FillStatementDetailsAsync(System.Data.IDbConnection db, CustomerLedgerDto dto, CancellationToken ct)
+    {
+        static string? Join(params string?[] parts) { var v = string.Join(", ", parts.Where(x => !string.IsNullOrWhiteSpace(x)).Select(x => x!.Trim())); return v.Length == 0 ? null : v; }
+        try
+        {
+            var co = await db.QuerySingleOrDefaultAsync(new CommandDefinition("SELECT TOP 1 CompnyName, CompnyAddr, TaxIdNum FROM OADM", cancellationToken: ct));
+            if (co is not null) { dto.CompanyName = co.CompnyName; dto.CompanyAddress = co.CompnyAddr; dto.CompanyGstin = co.TaxIdNum; }
+            if (string.IsNullOrWhiteSpace(dto.CompanyGstin))
+                dto.CompanyGstin = await db.ExecuteScalarAsync<string?>(new CommandDefinition("SELECT TOP 1 TaxIdNum FROM OBPL WHERE TaxIdNum IS NOT NULL AND TaxIdNum <> '' ORDER BY BPLId", cancellationToken: ct));
+        }
+        catch { /* company details are optional */ }
+        try
+        {
+            var a = await db.QuerySingleOrDefaultAsync(new CommandDefinition(@"
+                SELECT TOP 1 a.Street, a.Block, a.City, a.ZipCode, a.State, a.GSTRegnNo, a.Address
+                FROM CRD1 a JOIN OCRD c ON c.CardCode = a.CardCode
+                WHERE a.CardCode = @C AND a.AdresType = 'B'
+                ORDER BY CASE WHEN a.Address = c.BillToDef THEN 0 ELSE 1 END, a.LineNum", new { C = dto.CustomerCode }, cancellationToken: ct));
+            if (a is not null)
+            {
+                dto.Address = Join((string?)a.Street, (string?)a.Block, (string?)a.City, Join((string?)a.State, (string?)a.ZipCode));
+                if (string.IsNullOrWhiteSpace(dto.TaxNo)) dto.Gstin = a.GSTRegnNo;
+            }
+        }
+        catch { /* address is optional */ }
+        if (string.IsNullOrWhiteSpace(dto.Gstin)) dto.Gstin = dto.TaxNo;
     }
 
     // ---------------------------------------------------------------

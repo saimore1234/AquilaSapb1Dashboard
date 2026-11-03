@@ -1,3 +1,4 @@
+import { Link } from 'react-router-dom';
 import { getCustomersReport, getOpenPurchaseOrderLines, getOpenSalesOrderLines, getPendingDeliveries, getSalesAnalysis, getSalesRegister, getUnpaidInvoices } from '../../api/sales';
 import type { CustomerReport, CustomerRow, OpenPurchaseOrderLine, OpenPurchaseOrderReport, OpenSalesOrderLine, OpenSalesOrderReport, PendingDeliveryReport, PendingDeliveryRow, SalesAnalysisReport, SalesAnalysisRow, SalesRegisterRow, SalesRegisterReport, UnpaidInvoiceReport, UnpaidInvoiceRow } from '../../types';
 import DetailReport, { type Col } from './DetailReport';
@@ -275,7 +276,7 @@ export function SalesAnalysisSection({ by }: { by: keyof typeof ANALYSIS }) {
 
 // ---------------------------------------------------------------- Outstanding Customer Invoices (payment status)
 const unpaidCols: Col<UnpaidInvoiceRow>[] = [
-  { key: 'no', header: 'Invoice No.', render: (r) => `INV/${r.docNum}`, csv: (r) => r.docNum, nowrap: true },
+  { key: 'no', header: 'Invoice No.', render: (r) => <Link className="font-medium text-brand-600 dark:text-brand-400 hover:underline" to={`/sales/invoices/${r.docEntry}`}>INV/{r.docNum}</Link>, csv: (r) => r.docNum, nowrap: true },
   { key: 'date', header: 'Posting Date', render: (r) => formatDate(r.postingDate), csv: (r) => r.postingDate.slice(0, 10), nowrap: true },
   { key: 'due', header: 'Due Date', render: (r) => (r.dueDate ? formatDate(r.dueDate) : '—'), csv: (r) => r.dueDate?.slice(0, 10), nowrap: true },
   { key: 'cust', header: 'Customer', render: (r) => (<><div className="text-ink-primary">{r.customerName ?? r.customerCode}</div><div className="text-xs text-ink-tertiary">{r.customerCode}</div></>), csv: (r) => `${r.customerCode} - ${r.customerName ?? ''}` },

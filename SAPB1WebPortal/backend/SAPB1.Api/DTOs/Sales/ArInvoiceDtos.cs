@@ -42,6 +42,34 @@ public class ArInvoiceDetailDto
     public decimal Paid { get; set; }
     public decimal Balance { get; set; }
 
+    public string? CustomerReference { get; set; }
+    public DateTime? DocumentDate { get; set; }
+    public string? PaymentTerms { get; set; }
+    public string? Branch { get; set; }
+    /// <summary>Cancelled | Paid | Partially paid | Unpaid.</summary>
+    public string PaymentStatus { get; set; } = string.Empty;
+    /// <summary>Settled by something other than a listed incoming payment or credit note (e.g. an internal reconciliation); keeps Paid = payments + credits + this.</summary>
+    public decimal OtherSettlements { get; set; }
+    public List<InvoicePaymentDto> AppliedPayments { get; set; } = new();
+    public List<InvoiceCreditNoteDto> CreditNotes { get; set; } = new();
+
     public List<SalesDocumentLineDto> Lines { get; set; } = new();
     public List<RelatedDocumentDto> RelatedDocuments { get; set; } = new();
+}
+
+public class InvoicePaymentDto
+{
+    public int DocEntry { get; set; }
+    public int DocNum { get; set; }
+    public DateTime PaymentDate { get; set; }
+    /// <summary>Amount of this incoming payment applied to the invoice (ORCT/RCT2).</summary>
+    public decimal AmountApplied { get; set; }
+}
+
+public class InvoiceCreditNoteDto
+{
+    public int DocEntry { get; set; }
+    public int DocNum { get; set; }
+    public DateTime PostingDate { get; set; }
+    public decimal Total { get; set; }
 }

@@ -455,17 +455,20 @@ public class SqlSalesService : ISalesService
             SELECT c.DocEntry, c.DocNum, c.CardCode AS CustomerCode, cust.CardName AS CustomerName,
                    c.DocDate AS PostingDate, c.DocDueDate AS DueDate, s.SlpName AS SalesEmployee,
                    c.DocStatus AS Status, c.Comments AS Remarks, c.DocCur AS Currency,
-                   c.DocTotal AS GrandTotal, c.VatSum AS Tax, c.DiscSum AS Discount, c.PaidToDate AS Paid
+                   c.DocTotal AS GrandTotal, c.VatSum AS Tax, c.DiscSum AS Discount, c.PaidToDate AS Paid,
+                   c.NumAtCard AS CustomerReference, c.TaxDate AS DocumentDate, t.PymntGroup AS PaymentTerms, b.BPLName AS Branch, c.CANCELED AS Canceled
             FROM OINV c
             LEFT JOIN OCRD cust ON cust.CardCode = c.CardCode
             LEFT JOIN OSLP s ON s.SlpCode = c.SlpCode
+            LEFT JOIN OCTG t ON t.GroupNum = c.GroupNum
+            LEFT JOIN OBPL b ON b.BPLId = c.BPLId
             WHERE c.DocEntry = @DocEntry";
         var header = await db.QuerySingleOrDefaultAsync(new CommandDefinition(headerSql, new { DocEntry = docEntry }, cancellationToken: ct));
         if (header is null) return null;
 
         var linesSql = $@"
             SELECT l.LineNum, l.ItemCode, i.ItemName, {ItemUdf.Aroma(await ItemUdf.HasAromaAsync(db, ct), "i")} AS AromaCode, l.Quantity, NULL AS OpenQuantity, NULL AS DeliveredQuantity, NULL AS OrderedQuantity,
-                   l.WhsCode AS Warehouse, l.Price, l.DiscPrcnt AS DiscountPercent, l.TaxCode, l.LineTotal
+                   l.WhsCode AS Warehouse, l.Price, l.DiscPrcnt AS DiscountPercent, l.TaxCode, l.LineTotal, l.unitMsr AS Uom, l.VatSum AS TaxAmount
             FROM INV1 l
             LEFT JOIN OITM i ON i.ItemCode = l.ItemCode
             WHERE l.DocEntry = @DocEntry
@@ -473,6 +476,24 @@ public class SqlSalesService : ISalesService
         var lines = (await db.QueryAsync<SalesDocumentLineDto>(new CommandDefinition(linesSql, new { DocEntry = docEntry }, cancellationToken: ct))).ToList();
 
         var related = await GetRelatedDocumentsAsync(db, "INV1", docEntry, thisObjType: 13, ct);
+
+        // Incoming payments applied to this invoice (RCT2 → ORCT, cancelled payments excluded) and credit memos raised against it.
+        var payments = (await db.QueryAsync<InvoicePaymentDto>(new CommandDefinition(@"
+            SELECT r.DocEntry, r.DocNum, r.DocDate AS PaymentDate, SUM(a.SumApplied) AS AmountApplied
+            FROM RCT2 a
+            JOIN ORCT r ON r.DocEntry = a.DocNum
+            WHERE a.InvType = 13 AND a.DocEntry = @DocEntry AND r.Canceled = 'N'
+            GROUP BY r.DocEntry, r.DocNum, r.DocDate
+            ORDER BY r.DocDate, r.DocNum", new { DocEntry = docEntry }, cancellationToken: ct))).ToList();
+        var creditNotes = (await db.QueryAsync<InvoiceCreditNoteDto>(new CommandDefinition(@"
+            SELECT n.DocEntry, n.DocNum, n.DocDate AS PostingDate, n.DocTotal AS Total
+            FROM ORIN n
+            WHERE n.CANCELED = 'N' AND EXISTS (SELECT 1 FROM RIN1 l WHERE l.DocEntry = n.DocEntry AND l.BaseType = 13 AND l.BaseEntry = @DocEntry)
+            ORDER BY n.DocDate, n.DocNum", new { DocEntry = docEntry }, cancellationToken: ct))).ToList();
+
+        decimal paid = header.Paid, balance = header.GrandTotal - header.Paid;
+        bool cancelled = (string?)header.Canceled == "Y";
+        var paymentStatus = cancelled ? "Cancelled" : balance <= 0.005m ? "Paid" : paid > 0.005m ? "Partially paid" : "Unpaid";
 
         return new ArInvoiceDetailDto
         {
@@ -482,6 +503,9 @@ public class SqlSalesService : ISalesService
             GrandTotal = header.GrandTotal, Tax = header.Tax, Discount = header.Discount,
             Subtotal = header.GrandTotal + header.Discount - header.Tax,
             Paid = header.Paid, Balance = header.GrandTotal - header.Paid,
+            CustomerReference = header.CustomerReference, DocumentDate = header.DocumentDate, PaymentTerms = header.PaymentTerms, Branch = header.Branch,
+            PaymentStatus = paymentStatus, AppliedPayments = payments, CreditNotes = creditNotes,
+            OtherSettlements = header.Paid - payments.Sum(x => x.AmountApplied),
             Lines = lines, RelatedDocuments = related
         };
     }

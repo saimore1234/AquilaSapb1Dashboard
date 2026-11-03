@@ -652,6 +652,9 @@ export interface SalesDocumentLine {
   discountPercent: number;
   taxCode: string | null;
   lineTotal: number;
+  /** A/R invoice lines only. */
+  uom?: string | null;
+  taxAmount?: number | null;
 }
 
 interface SalesDocumentDetailBase {
@@ -757,6 +760,14 @@ export interface ArInvoiceDetail extends SalesDocumentDetailBase {
   salesEmployee: string | null;
   paid: number;
   balance: number;
+  customerReference: string | null;
+  documentDate: string | null;
+  paymentTerms: string | null;
+  branch: string | null;
+  paymentStatus: 'Cancelled' | 'Paid' | 'Partially paid' | 'Unpaid';
+  otherSettlements: number;
+  appliedPayments: { docEntry: number; docNum: number; paymentDate: string; amountApplied: number }[];
+  creditNotes: { docEntry: number; docNum: number; postingDate: string; total: number }[];
 }
 
 export interface ArCreditMemo {
@@ -1722,6 +1733,13 @@ export interface CustomerLedger {
   closingBalance: number;
   creditLimit: number;
   currentBalance: number;
+  /** Statement details, filled only when the ledger is requested with full=true. */
+  address?: string | null;
+  gstin?: string | null;
+  companyName?: string | null;
+  companyAddress?: string | null;
+  companyGstin?: string | null;
+  truncated?: boolean;
   rows: LedgerRow[];
 }
 

@@ -8,7 +8,7 @@ public interface ISalesReportsService
     Task<InvoiceRegisterDto> GetInvoiceRegisterAsync(InvoiceRegisterQuery query, CancellationToken ct = default);
     Task<CustomerOutstandingDto> GetCustomerOutstandingAsync(string? search = null, bool all = false, CancellationToken ct = default);
     Task<List<CustomerLookupDto>> LookupCustomersAsync(string? search, CancellationToken ct = default);
-    Task<CustomerLedgerDto?> GetCustomerLedgerAsync(string customer, DateTime? from, DateTime? to, CancellationToken ct = default);
+    Task<CustomerLedgerDto?> GetCustomerLedgerAsync(string customer, DateTime? from, DateTime? to, CancellationToken ct = default, bool full = false);
     Task<SalesAnalyticsOptionsDto> GetAnalyticsOptionsAsync(CancellationToken ct = default);
     Task<SalesAnalyticsReportDto> GetSalesAnalyticsAsync(SalesAnalyticsQuery query, CancellationToken ct = default);
     Task<TurnoverBreakupDto> GetTurnoverBreakupAsync(TurnoverQuery query, CancellationToken ct = default);
