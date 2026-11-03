@@ -20,17 +20,26 @@ const rupees = (v: number | null | undefined) => formatAmount(v, { zero: true })
 const dash = (v: string | null | undefined) => v || '—';
 const STATUS: { value: string; label: string }[] = [
   { value: '', label: 'All statuses' },
-  { value: 'unpaid', label: 'Unpaid' },
-  { value: 'partial', label: 'Partially paid' },
   { value: 'overdue', label: 'Overdue' },
   { value: 'duetoday', label: 'Due today' },
-  { value: 'notdue', label: 'Not yet due' }
+  { value: 'due7', label: 'Due within 7 days' },
+  { value: 'due15', label: 'Due within 15 days' },
+  { value: 'due30', label: 'Due within 30 days' },
+  { value: 'notdue', label: 'Upcoming (due after today)' },
+  { value: 'unpaid', label: 'Unpaid (nothing paid)' },
+  { value: 'partial', label: 'Partially paid' },
+  { value: 'paid', label: 'Paid (no balance)' }
 ];
+const STATUS_LABEL: Record<string, string> = Object.fromEntries(STATUS.filter((x) => x.value).map((x) => [x.value, x.label]));
+/** The six KPI cards; selecting one filters the invoice list with the same rule the card's amount uses. */
+const CARD_KEYS = ['all', 'overdue', 'duetoday', 'due7', 'due15', 'due30'] as const;
+type CardKey = (typeof CARD_KEYS)[number];
+const STATUS_TO_CARD = (status: string): CardKey | null => (['overdue', 'duetoday', 'due7', 'due15', 'due30'].includes(status) ? (status as CardKey) : null);
+const PAY_BADGE: Record<string, string> = { Paid: 'badge-success', Overdue: 'badge-danger', 'Due Today': 'badge-warning', Upcoming: 'badge-neutral' };
 
-interface Draft { customer: string; invoiceNo: string; terms: string; salesperson: string; branch: string; dueFrom: string; dueTo: string; status: string; minOver: string }
-const EMPTY: Draft = { customer: '', invoiceNo: '', terms: '', salesperson: '', branch: '', dueFrom: '', dueTo: '', status: '', minOver: '' };
+interface Draft { customer: string; customerCode: string; invoiceNo: string; terms: string; salesperson: string; branch: string; dueFrom: string; dueTo: string; status: string; minOver: string }
+const EMPTY: Draft = { customer: '', customerCode: '', invoiceNo: '', terms: '', salesperson: '', branch: '', dueFrom: '', dueTo: '', status: '', minOver: '' };
 
-const overdueText = (d: number) => (d > 0 ? `${d} days` : d === 0 ? 'Due today' : 'Not due');
 
 /**
  * Payment Due Register: open A/R invoices with their SAP due dates and payment terms. Outstanding is the SAP invoice balance (total minus paid to
@@ -45,6 +54,9 @@ export default function PaymentDueSection() {
   const [applied, setApplied] = useState<Draft>(EMPTY);
   const [page, setPage] = useState(1);
   const [tab, setTab] = useState<'invoices' | 'customers' | 'terms'>('invoices');
+  const [sel, setSel] = useState<CardKey | null>(null);
+  // Set when the invoice list was opened by clicking a customer / payment-terms row, so there is a way back to that summary.
+  const [back, setBack] = useState<{ tab: 'customers' | 'terms'; field: 'customerCode' | 'terms'; label: string } | null>(null);
   const [data, setData] = useState<PaymentDueReport | null>(null);
   const [termsList, setTermsList] = useState<{ key: string; name: string }[]>([]);
   const [loading, setLoading] = useState(true);
@@ -54,6 +66,7 @@ export default function PaymentDueSection() {
 
   const query = useMemo<PaymentDueQuery>(() => ({
     customer: applied.customer.trim() || undefined,
+    customerCode: applied.customerCode || undefined,
     invoiceNo: applied.invoiceNo && Number.isFinite(Number(applied.invoiceNo)) ? Number(applied.invoiceNo) : undefined,
     paymentTerms: applied.terms ? Number(applied.terms) : undefined,
     salesperson: applied.salesperson ? Number(applied.salesperson) : undefined,
@@ -83,23 +96,41 @@ export default function PaymentDueSection() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [query, page, reload, tick]);
 
-  const apply = (next: Draft) => { setApplied(next); setPage(1); };
-  const set = (k: keyof Draft, v: string) => setDraft((d) => ({ ...d, [k]: v }));
+  const apply = (next: Draft) => { setApplied(next); setPage(1); setSel(STATUS_TO_CARD(next.status)); };
+  const set = (k: keyof Draft, v: string) => setDraft((d) => ({ ...d, [k]: v, ...(k === 'customer' ? { customerCode: '' } : {}) }));
+  // A KPI card: filter the invoice list to the invoices behind its amount, keep every other active filter, stay on this page.
+  const selectCard = (key: CardKey) => {
+    const n = { ...applied, status: key === 'all' ? '' : key };
+    setDraft(n); setApplied(n); setPage(1); setSel(key); setTab('invoices');
+  };
+  const clearSelection = () => { const n = { ...applied, status: '' }; setDraft(n); setApplied(n); setPage(1); setSel(null); };
+  // A customer / payment-terms row: open that group's invoices, keeping the other filters and the selected card.
+  const drill = (from: 'customers' | 'terms', key: string, label: string) => {
+    const field = from === 'customers' ? 'customerCode' : 'terms';
+    const n = { ...applied, [field]: key } as Draft;
+    setDraft(n); setApplied(n); setPage(1); setTab('invoices'); setBack({ tab: from, field, label });
+  };
+  const backToSummary = () => {
+    if (!back) return;
+    const n = { ...applied, [back.field]: '' } as Draft;
+    setDraft(n); setApplied(n); setPage(1); setTab(back.tab); setBack(null);
+  };
   const totalPages = data ? Math.max(1, Math.ceil(data.totalCount / PAGE)) : 1;
+  const selLabel = applied.status ? STATUS_LABEL[applied.status] : null;
 
   async function exportCsv() {
     setNotice(null);
     try {
       const all = await getPaymentDue({ ...query, page: 1, pageSize: 5000 });
-      const t = all.totals;
+      const t = all.totals; // card totals (filters without the status selection)
       downloadCsv(
         `payment-due-register-${all.asOf.slice(0, 10)}.csv`,
         ['Customer Code', 'Customer Name', 'Invoice Number', 'Posting Date', 'Due Date', 'Payment Terms', 'Invoice Amount', 'Paid Amount', 'Outstanding Amount', 'Days Overdue', 'Payment Status', 'Salesperson', 'Branch'],
         [
-          ...all.rows.map((r) => [r.customerCode, r.customerName, r.docNum, r.postingDate.slice(0, 10), r.dueDate.slice(0, 10), r.paymentTerms, r.invoiceAmount, r.paidAmount, r.outstandingAmount, r.daysOverdue > 0 ? r.daysOverdue : 0, r.paymentStatus, r.salesperson, r.branch]),
-          ['TOTAL', `${t.invoices} invoices`, '', '', '', '', t.invoiceAmount, t.paidAmount, t.outstanding, '', '', '', '']
+          ...all.rows.map((r) => [r.customerCode, r.customerName, r.docNum, r.postingDate.slice(0, 10), r.dueDate.slice(0, 10), r.paymentTerms, r.invoiceAmount, r.paidAmount, r.outstandingAmount, r.daysOverdue, r.paymentStatus, r.salesperson, r.branch]),
+          ['TOTAL', `${all.selection.invoices} invoices`, '', '', '', '', all.selection.invoiceAmount, all.selection.paidAmount, all.selection.outstanding, '', '', '', '']
         ],
-        [['Report: Payment Due Register'], [`As of: ${all.asOf.slice(0, 10)}`], [`Overdue: ${t.overdue}`, `Due today: ${t.dueToday}`, `Due within 7 days: ${t.dueWithin7}`, `Due within 15 days: ${t.dueWithin15}`, `Due within 30 days: ${t.dueWithin30}`], []]
+        [['Report: Payment Due Register'], [`As of: ${all.asOf.slice(0, 10)}`], [`Selection: ${selLabel ?? 'All open invoices'}`, `${all.selection.invoices} invoices`, `Outstanding ${all.selection.outstanding}`], [`Overdue: ${t.overdue}`, `Due today: ${t.dueToday}`, `Due within 7 days: ${t.dueWithin7}`, `Due within 15 days: ${t.dueWithin15}`, `Due within 30 days: ${t.dueWithin30}`], []]
       );
       if (all.totalCount > 5000) setNotice(`Exported the first 5,000 of ${all.totalCount.toLocaleString('en-IN')} invoices — narrow the filters for the rest.`);
     } catch (err) {
@@ -150,7 +181,7 @@ export default function PaymentDueSection() {
         <div><label className="ctl-label" htmlFor="pd-od">Overdue ≥ days</label><input id="pd-od" inputMode="numeric" className={`${input} w-24`} value={draft.minOver} onChange={(e) => set('minOver', e.target.value.replace(/[^\d]/g, ''))} /></div>
         <div className="flex gap-2">
           <button type="button" className="btn-primary btn-compact" onClick={() => apply(draft)}>Apply</button>
-          <button type="button" className="btn-secondary btn-compact" onClick={() => { setDraft(EMPTY); apply(EMPTY); }}>Reset</button>
+          <button type="button" className="btn-secondary btn-compact" onClick={() => { setDraft(EMPTY); apply(EMPTY); setSel(null); setBack(null); }}>Reset</button>
         </div>
       </div>
 
@@ -161,15 +192,27 @@ export default function PaymentDueSection() {
           <div className="grid grid-cols-2 sm:grid-cols-3 xl:grid-cols-6 gap-3">
             {loading || !t ? Array.from({ length: 6 }).map((_, i) => <Skeleton key={i} className="h-[92px]" />) : (
               <>
-                <StatCard variant="compact" label="Total Outstanding Due" value={rupees(t.outstanding)} hint={`${formatCount(t.invoices)} invoices`} icon={Wallet} />
-                <StatCard variant="compact" label="Overdue Amount" value={rupees(t.overdue)} hint={`${formatCount(t.overdueInvoices)} invoices past due`} icon={AlertTriangle} />
-                <StatCard variant="compact" label="Due Today" value={rupees(t.dueToday)} icon={CalendarClock} />
-                <StatCard variant="compact" label="Due Within 7 Days" value={rupees(t.dueWithin7)} icon={CalendarDays} />
-                <StatCard variant="compact" label="Due Within 15 Days" value={rupees(t.dueWithin15)} icon={CalendarDays} />
-                <StatCard variant="compact" label="Due Within 30 Days" value={rupees(t.dueWithin30)} icon={CalendarDays} />
+                {([
+                  { key: 'all', label: 'Total Outstanding Due', value: t.outstanding, count: t.invoices, icon: Wallet, hint: `${formatCount(t.invoices)} invoices` },
+                  { key: 'overdue', label: 'Overdue Amount', value: t.overdue, count: t.overdueInvoices, icon: AlertTriangle, hint: `${formatCount(t.overdueInvoices)} invoices past due` },
+                  { key: 'duetoday', label: 'Due Today', value: t.dueToday, count: t.dueTodayInvoices, icon: CalendarClock, hint: `${formatCount(t.dueTodayInvoices)} invoices` },
+                  { key: 'due7', label: 'Due Within 7 Days', value: t.dueWithin7, count: t.dueWithin7Invoices, icon: CalendarDays, hint: `${formatCount(t.dueWithin7Invoices)} invoices · cumulative` },
+                  { key: 'due15', label: 'Due Within 15 Days', value: t.dueWithin15, count: t.dueWithin15Invoices, icon: CalendarDays, hint: `${formatCount(t.dueWithin15Invoices)} invoices · cumulative` },
+                  { key: 'due30', label: 'Due Within 30 Days', value: t.dueWithin30, count: t.dueWithin30Invoices, icon: CalendarDays, hint: `${formatCount(t.dueWithin30Invoices)} invoices · cumulative` }
+                ] as { key: CardKey; label: string; value: number; count: number; icon: typeof Wallet; hint: string }[]).map((c) => (
+                  <button key={c.key} type="button" onClick={() => selectCard(c.key)} aria-pressed={sel === c.key}
+                    title={`Show the ${formatCount(c.count)} invoices behind this amount`}
+                    className={`text-left rounded-lg focus:outline-none focus-visible:ring-2 focus-visible:ring-brand-500 ${sel === c.key ? 'ring-2 ring-brand-600' : ''}`}>
+                    <StatCard variant="compact" label={c.label} value={rupees(c.value)} hint={c.hint} icon={c.icon} />
+                  </button>
+                ))}
               </>
             )}
           </div>
+          <p className="text-xs text-ink-tertiary">
+            Click a card to list the invoices behind it. The Due Within 7 / 15 / 30 Days amounts are <span className="font-medium">cumulative</span> — each includes Due Today and the shorter windows — so do not add them together.
+            Overdue = due date before today with a balance; days overdue = today − invoice due date (0 when due today, in the future or paid). Dates are in India time{data ? ` (as of ${formatDate(data.asOf)})` : ''}.
+          </p>
           {t && (
             <p className="text-xs text-ink-tertiary">
               Customer account balance (ledger) for these customers: {rupees(t.customerAccountBalance)}. It is lower than the outstanding above by credit memos and payments on account that are not applied to an invoice; the journal-based Total Outstanding report nets those.
@@ -185,6 +228,20 @@ export default function PaymentDueSection() {
             )}
           </div>
           {notice && <p className="text-xs text-warning">{notice}</p>}
+          {(sel || back || selLabel) && data && (
+            <div className="panel px-3 py-2 flex flex-wrap items-center gap-x-4 gap-y-1 text-sm">
+              <span className="text-ink-secondary">
+                Showing{' '}
+                <span className="font-medium text-ink-primary">{sel === 'all' ? 'Total outstanding' : selLabel ?? 'all open invoices'}</span>
+                {back && <> · <span className="font-medium text-ink-primary">{back.label}</span></>}
+                {' '}· {formatCount(data.selection.invoices)} invoices · outstanding <span className="font-medium text-ink-primary tabular-nums">{rupees(data.selection.outstanding)}</span>
+              </span>
+              <span className="ml-auto flex gap-2">
+                {back && <button type="button" className="btn-secondary btn-compact" onClick={backToSummary}>← Back to {back.tab === 'customers' ? 'customer-wise' : 'payment terms-wise'} due</button>}
+                {(sel || applied.status) && <button type="button" className="btn-secondary btn-compact" onClick={clearSelection}>Clear selection</button>}
+              </span>
+            </div>
+          )}
 
           <div className="card p-0 overflow-hidden">
             {loading || !data ? (
@@ -210,17 +267,17 @@ export default function PaymentDueSection() {
                             <td className="px-3 py-2.5 text-right tabular-nums">{rupees(r.invoiceAmount)}</td>
                             <td className="px-3 py-2.5 text-right tabular-nums">{rupees(r.paidAmount)}</td>
                             <td className="px-3 py-2.5 text-right tabular-nums font-medium">{rupees(r.outstandingAmount)}</td>
-                            <td className={`px-3 py-2.5 text-right tabular-nums ${r.daysOverdue > 0 ? 'text-danger' : ''}`}>{overdueText(r.daysOverdue)}</td>
-                            <td className="px-3 py-2.5 whitespace-nowrap"><span className={r.paymentStatus === 'Partially paid' ? 'badge-warning' : 'badge-neutral'}>{r.paymentStatus}</span></td>
+                            <td className={`px-3 py-2.5 text-right tabular-nums ${r.daysOverdue > 0 ? 'text-danger' : ''}`}>{r.daysOverdue}</td>
+                            <td className="px-3 py-2.5 whitespace-nowrap"><span className={PAY_BADGE[r.paymentStatus] ?? 'badge-neutral'}>{r.paymentStatus}</span></td>
                             <td className="px-3 py-2.5">{dash(r.salesperson)}</td>
                             <td className="px-3 py-2.5">{dash(r.branch)}</td>
                           </tr>
                         ))}
                         <tr className="bg-surface-tertiary/60 font-semibold border-t border-border-strong">
-                          <td className="px-3 py-2.5" colSpan={5}>Total · {formatCount(data.totals.invoices)} invoices (all pages)</td>
-                          <td className="px-3 py-2.5 text-right tabular-nums">{rupees(data.totals.invoiceAmount)}</td>
-                          <td className="px-3 py-2.5 text-right tabular-nums">{rupees(data.totals.paidAmount)}</td>
-                          <td className="px-3 py-2.5 text-right tabular-nums">{rupees(data.totals.outstanding)}</td>
+                          <td className="px-3 py-2.5" colSpan={5}>Total · {formatCount(data.selection.invoices)} invoices (all pages)</td>
+                          <td className="px-3 py-2.5 text-right tabular-nums">{rupees(data.selection.invoiceAmount)}</td>
+                          <td className="px-3 py-2.5 text-right tabular-nums">{rupees(data.selection.paidAmount)}</td>
+                          <td className="px-3 py-2.5 text-right tabular-nums">{rupees(data.selection.outstanding)}</td>
                           <td colSpan={4} />
                         </tr>
                       </tbody>
@@ -241,11 +298,11 @@ export default function PaymentDueSection() {
                       <tr key={b.key} className="border-b border-border last:border-0 hover:bg-surface-tertiary/60">
                         <td className="px-3 py-2.5">
                           {tab === 'customers' ? (
-                            <button type="button" className="text-left hover:underline" title="Show this customer's invoices" onClick={() => { const n = { ...applied, customer: b.key }; setDraft(n); apply(n); setTab('invoices'); }}>
+                            <button type="button" className="text-left hover:underline" title="Show this customer's invoices" onClick={() => drill('customers', b.key, b.name ?? b.key)}>
                               <span className="text-ink-primary">{b.name ?? b.key}</span> <span className="text-xs text-ink-tertiary">{b.key}</span>
                             </button>
                           ) : (
-                            <button type="button" className="text-left hover:underline" title="Show invoices on these terms" onClick={() => { const n = { ...applied, terms: b.key }; setDraft(n); apply(n); setTab('invoices'); }}>{b.name ?? b.key}</button>
+                            <button type="button" className="text-left hover:underline" title="Show invoices on these terms" onClick={() => drill('terms', b.key, b.name ?? b.key)}>{b.name ?? b.key}</button>
                           )}
                         </td>
                         <td className="px-3 py-2.5 text-right tabular-nums">{formatCount(b.invoices)}</td>

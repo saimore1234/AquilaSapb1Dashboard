@@ -7,7 +7,7 @@ namespace SAPB1.Api.Services;
 public partial class SqlSalesDetailReportsService
 {
     public static readonly HashSet<string> KpiKinds = new() { "open-quotations", "open-orders", "pending-deliveries", "open-invoices", "incoming-payments" };
-    public static readonly HashSet<string> PaymentDueStatuses = new() { "unpaid", "partial", "overdue", "duetoday", "notdue" };
+    public static readonly HashSet<string> PaymentDueStatuses = new() { "paid", "unpaid", "partial", "overdue", "duetoday", "notdue", "due7", "due15", "due30" };
 
     // ------------------------------------------------------------------ Documents behind a KPI card
     // The predicates are the ones the dashboard counts use (SqlSalesActivity): cancelled excluded, open = DocStatus 'O', and the same unit /
@@ -72,28 +72,48 @@ public partial class SqlSalesDetailReportsService
     }
 
     // ------------------------------------------------------------------ Payment Due Register
-    // One row per open (not fully paid), non-cancelled A/R invoice, using the invoice's own SAP due date (OINV.DocDueDate, which SAP derived from
-    // the payment terms) and terms (OCTG). Paid = OINV.PaidToDate, which SAP maintains for incoming payments (RCT2) AND for credit memos /
-    // reconciliations applied to the invoice, so a payment or credit is never counted twice. Outstanding = DocTotal - PaidToDate, the same
-    // figure as the "Outstanding Customer Invoices" report and card. Unapplied credit memos and payments on account sit on the customer account, not
-    // on an invoice, so they are not netted here; the journal-based Total Outstanding (the client's ageing definition) nets them.
+    // One row per open, non-cancelled A/R invoice, using the invoice's own SAP due date (OINV.DocDueDate, derived by SAP from the payment terms) and
+    // terms (OCTG). Paid = OINV.PaidToDate, which SAP maintains for incoming payments (RCT2) AND for credit memos / reconciliations applied to the
+    // invoice, so a payment or credit is never counted twice. Outstanding = DocTotal - PaidToDate, the same figure as the "Outstanding Customer Invoices"
+    // report and card. Unapplied credit memos and payments on account sit on the customer account, not on an invoice, so they are not netted here; the
+    // journal-based Total Outstanding (the client's ageing definition) nets them.
+    //
+    // Business date: every "today" comes from ONE place (BusinessToday, India Standard Time) and is returned as AsOf, so the page never computes its own.
+    // Overdue days = business today - invoice DUE date (never the posting date), only while the balance is positive; due today / future / paid = 0.
+    // The six KPI amounts are computed over the filters EXCEPT the status selection, so they stay visible while one is selected; the rows, count,
+    // breakdowns and Selection totals follow the selection. The due-within buckets are cumulative (today through today + N days).
+    internal static DateTime BusinessToday()
+    {
+        foreach (var id in new[] { "India Standard Time", "Asia/Kolkata" })
+        {
+            try { return TimeZoneInfo.ConvertTimeFromUtc(DateTime.UtcNow, TimeZoneInfo.FindSystemTimeZoneById(id)).Date; }
+            catch (TimeZoneNotFoundException) { }
+            catch (InvalidTimeZoneException) { }
+        }
+        return DateTime.Today;
+    }
+
     public async Task<PaymentDueReportDto> GetPaymentDueAsync(PaymentDueQuery q, CancellationToken ct = default)
     {
-        var today = DateTime.Today;
+        var today = BusinessToday();
         var pageSize = Math.Clamp(q.PageSize, 1, 5000);
         var p = new DynamicParameters();
         p.Add("Today", today);
         p.Add("Search", Like(q.Customer));
+        p.Add("CustCode", string.IsNullOrWhiteSpace(q.CustomerCode) ? null : q.CustomerCode.Trim());
         p.Add("InvNo", q.InvoiceNo); p.Add("Terms", q.PaymentTerms); p.Add("Slp", q.Salesperson); p.Add("Branch", q.Branch);
         p.Add("DueFrom", q.DueFrom?.Date); p.Add("DueTo", q.DueTo?.Date);
         p.Add("Status", string.IsNullOrWhiteSpace(q.Status) ? null : q.Status.Trim().ToLowerInvariant());
         p.Add("MinOver", q.MinDaysOverdue);
         p.Add("Skip", (Math.Max(1, q.Page) - 1) * pageSize); p.Add("Take", pageSize);
 
+        // Dd = days past due (positive = overdue). Pos = the invoice still has a positive balance.
         var cte = $@"
             WITH x AS (
                 SELECT h.DocEntry, h.DocNum, h.CardCode, ISNULL(cu.CardName, h.CardName) AS CardName, h.DocDate, h.DocDueDate, h.GroupNum, t.PymntGroup,
-                       h.DocTotal, h.PaidToDate, h.DocTotal - h.PaidToDate AS Bal, h.SlpCode, s.SlpName, h.BPLId, b.BPLName,
+                       h.DocTotal, h.PaidToDate, h.DocTotal - h.PaidToDate AS Bal,
+                       CASE WHEN h.DocTotal - h.PaidToDate > 0.005 THEN 1 ELSE 0 END AS Pos,
+                       h.SlpCode, s.SlpName, h.BPLId, b.BPLName,
                        DATEDIFF(DAY, h.DocDueDate, @Today) AS Dd
                 FROM OINV h
                 LEFT JOIN OCRD cu ON cu.CardCode = h.CardCode
@@ -102,58 +122,78 @@ public partial class SqlSalesDetailReportsService
                 LEFT JOIN OBPL b ON b.BPLId = h.BPLId
                 WHERE h.CANCELED = 'N' AND h.DocStatus = 'O'{SalesScopeSql.CustomerPredicate(_scope.Current, "cu")}
             )";
-        const string where = @"
+        const string baseWhere = @"
             WHERE (@Search IS NULL OR x.CardCode LIKE @Search OR x.CardName LIKE @Search)
+              AND (@CustCode IS NULL OR x.CardCode = @CustCode)
               AND (@InvNo IS NULL OR x.DocNum = @InvNo)
               AND (@Terms IS NULL OR x.GroupNum = @Terms)
               AND (@Slp IS NULL OR x.SlpCode = @Slp)
               AND (@Branch IS NULL OR x.BPLId = @Branch)
               AND (@DueFrom IS NULL OR x.DocDueDate >= @DueFrom)
               AND (@DueTo IS NULL OR x.DocDueDate < DATEADD(DAY, 1, @DueTo))
-              AND (@MinOver IS NULL OR x.Dd >= @MinOver)
+              AND (@MinOver IS NULL OR (x.Pos = 1 AND x.Dd >= @MinOver))";
+        const string statusClause = @"
               AND (@Status IS NULL
-                   OR (@Status = 'unpaid' AND x.PaidToDate <= 0.005)
-                   OR (@Status = 'partial' AND x.PaidToDate > 0.005)
-                   OR (@Status = 'overdue' AND x.Dd > 0)
-                   OR (@Status = 'duetoday' AND x.Dd = 0)
-                   OR (@Status = 'notdue' AND x.Dd < 0))";
+                   OR (@Status = 'paid' AND x.Pos = 0)
+                   OR (@Status = 'unpaid' AND x.Pos = 1 AND x.PaidToDate <= 0.005)
+                   OR (@Status = 'partial' AND x.Pos = 1 AND x.PaidToDate > 0.005)
+                   OR (@Status = 'overdue' AND x.Pos = 1 AND x.Dd > 0)
+                   OR (@Status = 'duetoday' AND x.Pos = 1 AND x.Dd = 0)
+                   OR (@Status = 'notdue' AND x.Pos = 1 AND x.Dd < 0)
+                   OR (@Status = 'due7' AND x.Pos = 1 AND x.Dd <= 0 AND x.Dd >= -7)
+                   OR (@Status = 'due15' AND x.Pos = 1 AND x.Dd <= 0 AND x.Dd >= -15)
+                   OR (@Status = 'due30' AND x.Pos = 1 AND x.Dd <= 0 AND x.Dd >= -30))";
+        const string where = baseWhere + statusClause;
 
         using var db = _connectionFactory.CreateConnection();
         var totals = await db.QuerySingleAsync<PaymentDueTotalsDto>(new CommandDefinition($@"
             {cte}
             SELECT COUNT(*) AS Invoices, ISNULL(SUM(x.DocTotal), 0) AS InvoiceAmount, ISNULL(SUM(x.PaidToDate), 0) AS PaidAmount, ISNULL(SUM(x.Bal), 0) AS Outstanding,
-                   ISNULL(SUM(CASE WHEN x.Dd > 0 THEN x.Bal ELSE 0 END), 0) AS Overdue,
-                   ISNULL(SUM(CASE WHEN x.Dd > 0 THEN 1 ELSE 0 END), 0) AS OverdueInvoices,
-                   ISNULL(SUM(CASE WHEN x.Dd = 0 THEN x.Bal ELSE 0 END), 0) AS DueToday,
-                   ISNULL(SUM(CASE WHEN x.Dd <= 0 AND x.Dd >= -7 THEN x.Bal ELSE 0 END), 0) AS DueWithin7,
-                   ISNULL(SUM(CASE WHEN x.Dd <= 0 AND x.Dd >= -15 THEN x.Bal ELSE 0 END), 0) AS DueWithin15,
-                   ISNULL(SUM(CASE WHEN x.Dd <= 0 AND x.Dd >= -30 THEN x.Bal ELSE 0 END), 0) AS DueWithin30
+                   ISNULL(SUM(CASE WHEN x.Pos = 1 AND x.Dd > 0 THEN x.Bal ELSE 0 END), 0) AS Overdue,
+                   ISNULL(SUM(CASE WHEN x.Pos = 1 AND x.Dd > 0 THEN 1 ELSE 0 END), 0) AS OverdueInvoices,
+                   ISNULL(SUM(CASE WHEN x.Pos = 1 AND x.Dd = 0 THEN x.Bal ELSE 0 END), 0) AS DueToday,
+                   ISNULL(SUM(CASE WHEN x.Pos = 1 AND x.Dd = 0 THEN 1 ELSE 0 END), 0) AS DueTodayInvoices,
+                   ISNULL(SUM(CASE WHEN x.Pos = 1 AND x.Dd <= 0 AND x.Dd >= -7 THEN x.Bal ELSE 0 END), 0) AS DueWithin7,
+                   ISNULL(SUM(CASE WHEN x.Pos = 1 AND x.Dd <= 0 AND x.Dd >= -7 THEN 1 ELSE 0 END), 0) AS DueWithin7Invoices,
+                   ISNULL(SUM(CASE WHEN x.Pos = 1 AND x.Dd <= 0 AND x.Dd >= -15 THEN x.Bal ELSE 0 END), 0) AS DueWithin15,
+                   ISNULL(SUM(CASE WHEN x.Pos = 1 AND x.Dd <= 0 AND x.Dd >= -15 THEN 1 ELSE 0 END), 0) AS DueWithin15Invoices,
+                   ISNULL(SUM(CASE WHEN x.Pos = 1 AND x.Dd <= 0 AND x.Dd >= -30 THEN x.Bal ELSE 0 END), 0) AS DueWithin30,
+                   ISNULL(SUM(CASE WHEN x.Pos = 1 AND x.Dd <= 0 AND x.Dd >= -30 THEN 1 ELSE 0 END), 0) AS DueWithin30Invoices
+            FROM x {baseWhere}", p, cancellationToken: ct));
+
+        // The rows the user is looking at: filters + the selected status.
+        var selection = await db.QuerySingleAsync<PaymentDueSelectionDto>(new CommandDefinition($@"
+            {cte}
+            SELECT COUNT(*) AS Invoices, ISNULL(SUM(x.DocTotal), 0) AS InvoiceAmount, ISNULL(SUM(x.PaidToDate), 0) AS PaidAmount, ISNULL(SUM(x.Bal), 0) AS Outstanding
             FROM x {where}", p, cancellationToken: ct));
+
         totals.CustomerAccountBalance = await db.ExecuteScalarAsync<decimal>(new CommandDefinition($@"
             {cte}
-            SELECT ISNULL(SUM(c.Balance), 0) FROM OCRD c WHERE c.CardCode IN (SELECT x.CardCode FROM x {where})", p, cancellationToken: ct));
+            SELECT ISNULL(SUM(c.Balance), 0) FROM OCRD c WHERE c.CardCode IN (SELECT x.CardCode FROM x {baseWhere})", p, cancellationToken: ct));
 
         var byCustomer = (await db.QueryAsync<PaymentDueBreakdownDto>(new CommandDefinition($@"
             {cte}
             SELECT TOP 100 x.CardCode AS [Key], MAX(x.CardName) AS Name, COUNT(*) AS Invoices, SUM(x.Bal) AS Outstanding,
-                   SUM(CASE WHEN x.Dd > 0 THEN x.Bal ELSE 0 END) AS Overdue
+                   SUM(CASE WHEN x.Pos = 1 AND x.Dd > 0 THEN x.Bal ELSE 0 END) AS Overdue
             FROM x {where} GROUP BY x.CardCode ORDER BY SUM(x.Bal) DESC", p, cancellationToken: ct))).ToList();
 
         var byTerms = (await db.QueryAsync<PaymentDueBreakdownDto>(new CommandDefinition($@"
             {cte}
             SELECT CAST(x.GroupNum AS varchar(20)) AS [Key], MAX(ISNULL(x.PymntGroup, '(No terms)')) AS Name, COUNT(*) AS Invoices, SUM(x.Bal) AS Outstanding,
-                   SUM(CASE WHEN x.Dd > 0 THEN x.Bal ELSE 0 END) AS Overdue
+                   SUM(CASE WHEN x.Pos = 1 AND x.Dd > 0 THEN x.Bal ELSE 0 END) AS Overdue
             FROM x {where} GROUP BY x.GroupNum ORDER BY SUM(x.Bal) DESC", p, cancellationToken: ct))).ToList();
 
         var rows = (await db.QueryAsync<PaymentDueRowDto>(new CommandDefinition($@"
             {cte}
             SELECT x.DocEntry, x.DocNum, x.CardCode AS CustomerCode, x.CardName AS CustomerName, x.DocDate AS PostingDate, x.DocDueDate AS DueDate,
-                   x.PymntGroup AS PaymentTerms, x.DocTotal AS InvoiceAmount, x.PaidToDate AS PaidAmount, x.Bal AS OutstandingAmount, x.Dd AS DaysOverdue,
-                   CASE WHEN x.PaidToDate > 0.005 THEN 'Partially paid' ELSE 'Unpaid' END AS PaymentStatus, x.SlpName AS Salesperson, x.BPLName AS Branch
+                   x.PymntGroup AS PaymentTerms, x.DocTotal AS InvoiceAmount, x.PaidToDate AS PaidAmount, x.Bal AS OutstandingAmount,
+                   CASE WHEN x.Pos = 1 AND x.Dd > 0 THEN x.Dd ELSE 0 END AS DaysOverdue,
+                   CASE WHEN x.Pos = 0 THEN 'Paid' WHEN x.Dd > 0 THEN 'Overdue' WHEN x.Dd = 0 THEN 'Due Today' ELSE 'Upcoming' END AS PaymentStatus,
+                   x.SlpName AS Salesperson, x.BPLName AS Branch
             FROM x {where}
             ORDER BY x.DocDueDate, x.DocNum
             OFFSET @Skip ROWS FETCH NEXT @Take ROWS ONLY", p, cancellationToken: ct))).ToList();
 
-        return new PaymentDueReportDto { AsOf = today, Totals = totals, ByCustomer = byCustomer, ByTerms = byTerms, TotalCount = totals.Invoices, Rows = rows };
+        return new PaymentDueReportDto { AsOf = today, Totals = totals, Selection = selection, ByCustomer = byCustomer, ByTerms = byTerms, TotalCount = selection.Invoices, Rows = rows };
     }
 }

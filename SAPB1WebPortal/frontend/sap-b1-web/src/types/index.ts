@@ -2389,6 +2389,7 @@ export interface KpiDocumentReport {
 
 export interface PaymentDueQuery {
   customer?: string;
+  customerCode?: string;
   invoiceNo?: number;
   paymentTerms?: number;
   salesperson?: number;
@@ -2412,7 +2413,7 @@ export interface PaymentDueRow {
   paidAmount: number;
   outstandingAmount: number;
   daysOverdue: number;
-  paymentStatus: 'Unpaid' | 'Partially paid';
+  paymentStatus: 'Paid' | 'Overdue' | 'Due Today' | 'Upcoming';
   salesperson: string | null;
   branch: string | null;
 }
@@ -2421,8 +2422,11 @@ export interface PaymentDueReport {
   asOf: string;
   totals: {
     invoices: number; invoiceAmount: number; paidAmount: number; outstanding: number; overdue: number; overdueInvoices: number;
-    dueToday: number; dueWithin7: number; dueWithin15: number; dueWithin30: number; customerAccountBalance: number;
+    dueToday: number; dueTodayInvoices: number; dueWithin7: number; dueWithin7Invoices: number; dueWithin15: number; dueWithin15Invoices: number;
+    dueWithin30: number; dueWithin30Invoices: number; customerAccountBalance: number;
   };
+  /** The invoices the list shows (filters + the selected status). */
+  selection: { invoices: number; invoiceAmount: number; paidAmount: number; outstanding: number };
   byCustomer: PaymentDueBreakdown[];
   byTerms: PaymentDueBreakdown[];
   totalCount: number;
