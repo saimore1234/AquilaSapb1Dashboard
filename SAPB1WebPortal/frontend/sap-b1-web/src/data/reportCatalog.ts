@@ -76,7 +76,7 @@ export const reportCatalog: ReportDefinition[] = [
   // ------------------------------------------------------------- SALES
   // Sales Dashboard sections, as full reports (see data/salesReports.ts).
   ...salesReports
-    .filter((r) => r.built)
+    .filter((r) => r.built && !r.hidden)
     .map((r) => link(`sales-dashboard-${r.id}`, r.name, 'sales', r.description, r.path, ['dashboard'])),
   table('sales-summary', 'Sales Summary', 'sales', 'Monthly sales value trend from real A/R invoices.', 'salesByMonth', ['revenue', 'summary']),
   table('sales-by-customer', 'Sales by Customer', 'sales', 'Top customers by invoiced revenue.', 'salesByCustomer', ['customer']),

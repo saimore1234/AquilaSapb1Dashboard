@@ -7,7 +7,7 @@ public partial class SqlSalesPerformanceService
 {
     // Dimension predicate for a document header `h` with line table `ln` (QUT1/RDR1/DLN1/INV1): unit = a line at that location,
     // salesperson = the document's salesperson, customer group = the customer's group, category = a line whose item is in it.
-    private static string DocDims(string ln) => $@"
+    internal static string DocDims(string ln) => $@"
               AND (@Unit IS NULL OR EXISTS (SELECT 1 FROM {ln} x WHERE x.DocEntry = h.DocEntry AND x.LocCode = @Unit))
               AND (@Slp IS NULL OR h.SlpCode = @Slp)
               AND (@Group IS NULL OR EXISTS (SELECT 1 FROM OCRD c WHERE c.CardCode = h.CardCode AND c.GroupCode = @Group))

@@ -109,6 +109,26 @@ public class SalesReportsController : ControllerBase
     public async Task<ActionResult<ApiResponse<UnpaidInvoiceReportDto>>> GetUnpaidInvoices([FromQuery] DetailReportQuery query, CancellationToken ct)
         => CheckDetail<UnpaidInvoiceReportDto>(query) ?? Ok(ApiResponse<UnpaidInvoiceReportDto>.Ok(await _detail.GetUnpaidInvoicesAsync(query, ct)));
 
+    /// <summary>Documents behind a dashboard KPI card (By = open-quotations | open-orders | pending-deliveries | open-invoices | incoming-payments).</summary>
+    [HttpGet("kpi-documents")]
+    public async Task<ActionResult<ApiResponse<KpiDocumentReportDto>>> GetKpiDocuments([FromQuery] DetailReportQuery query, CancellationToken ct)
+    {
+        var bad = CheckDetail<KpiDocumentReportDto>(query);
+        if (bad is not null) return bad;
+        if (!SAPB1.Api.Services.SqlSalesDetailReportsService.KpiKinds.Contains(query.By ?? "")) return BadRequest(ApiResponse<KpiDocumentReportDto>.Fail("Unknown KPI document list."));
+        return Ok(ApiResponse<KpiDocumentReportDto>.Ok(await _detail.GetKpiDocumentsAsync(query, ct)));
+    }
+
+    [HttpGet("payment-due")]
+    public async Task<ActionResult<ApiResponse<PaymentDueReportDto>>> GetPaymentDue([FromQuery] PaymentDueQuery query, CancellationToken ct)
+    {
+        if (query.PageSize is < 1 or > 5000 || query.Page < 1) return BadRequest(ApiResponse<PaymentDueReportDto>.Fail("Invalid paging."));
+        if (InvalidRange(query.DueFrom, query.DueTo)) return BadRequest(ApiResponse<PaymentDueReportDto>.Fail("Due From must be on or before Due To."));
+        if (!string.IsNullOrWhiteSpace(query.Status) && !SAPB1.Api.Services.SqlSalesDetailReportsService.PaymentDueStatuses.Contains(query.Status.Trim().ToLowerInvariant()))
+            return BadRequest(ApiResponse<PaymentDueReportDto>.Fail("Unknown payment status."));
+        return Ok(ApiResponse<PaymentDueReportDto>.Ok(await _detail.GetPaymentDueAsync(query, ct)));
+    }
+
     [HttpGet("lost-customers")]
     public async Task<ActionResult<ApiResponse<LostCustomerReportDto>>> GetLostCustomers([FromQuery] LostCustomerQuery query, CancellationToken ct)
     {

@@ -57,7 +57,10 @@ import type {
   UnpaidInvoiceReport,
   LostCustomerQuery,
   LostCustomerReport,
-  OrderExecutionReport
+  OrderExecutionReport,
+  KpiDocumentReport,
+  PaymentDueQuery,
+  PaymentDueReport,
 } from '../types';
 
 // Every function here talks to the existing GET /api/sales/* endpoints —
@@ -221,3 +224,9 @@ export const getLostCustomers = (params: LostCustomerQuery) =>
 
 export const getOrderExecution = (params: Record<string, unknown>) =>
   unwrap<OrderExecutionReport>(apiClient.get('/sales/reports/order-execution', { params }), 'Failed to load the order execution report.');
+
+export const getKpiDocuments = (params: DetailReportQuery) =>
+  unwrap<KpiDocumentReport>(apiClient.get('/sales/reports/kpi-documents', { params }), 'Failed to load the documents behind this card.');
+
+export const getPaymentDue = (params: PaymentDueQuery) =>
+  unwrap<PaymentDueReport>(apiClient.get('/sales/reports/payment-due', { params }), 'Failed to load the payment due register.');

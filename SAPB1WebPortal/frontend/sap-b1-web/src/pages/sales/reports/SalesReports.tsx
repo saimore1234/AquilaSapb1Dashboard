@@ -14,6 +14,8 @@ import OutstandingLedgerSection from "../../../components/sales/OutstandingLedge
 import CustomerGroupSalesSection from "../../../components/sales/CustomerGroupSalesSection";
 import LostCustomersSection from "../../../components/sales/LostCustomersSection";
 import OrderExecutionSection from "../../../components/sales/OrderExecutionSection";
+import PaymentDueSection from "../../../components/sales/PaymentDueSection";
+import KpiDocumentsSection from "../../../components/sales/KpiDocumentsSection";
 import { salesReports, SALES_REPORTS_PATH } from "../../../data/salesReports";
 import {
   RefreshBar,
@@ -41,6 +43,8 @@ const reportBodies: Record<string, () => ReactElement> = {
   "customers": () => <CustomersSection />,
   "lost-customers": () => <LostCustomersSection />,
   "order-execution": () => <OrderExecutionSection />,
+  "payment-due": () => <PaymentDueSection />,
+  "kpi-documents": () => <KpiDocumentsSection />,
   "unpaid-invoices": () => <UnpaidInvoicesSection />,
   "customer-group-sales": () => <CustomerGroupSalesSection />,
   "pending-deliveries": () => <PendingDeliveriesSection />,
@@ -63,7 +67,7 @@ export function SalesReportsHub() {
         </p>
       </div>
       <div className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-3 gap-4">
-        {salesReports.map((r) => (
+        {salesReports.filter((r) => !r.hidden).map((r) => (
           <Link
             key={r.id}
             to={r.path}

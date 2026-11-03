@@ -2366,3 +2366,65 @@ export interface TargetPerformance {
 export interface TargetPerformanceQuery {
   scope: SalesTargetScope; financialYear?: string; unit?: number; salesperson?: number;
 }
+
+export interface KpiDocumentRow {
+  docEntry: number;
+  docNum: number;
+  postingDate: string;
+  dueDate: string | null;
+  customerCode: string;
+  customerName: string | null;
+  salesperson: string | null;
+  branch: string | null;
+  docTotal: number;
+  openAmount: number;
+}
+export interface KpiDocumentReport {
+  kind: string;
+  note: string | null;
+  totals: { documents: number; docTotal: number; openAmount: number };
+  totalCount: number;
+  rows: KpiDocumentRow[];
+}
+
+export interface PaymentDueQuery {
+  customer?: string;
+  invoiceNo?: number;
+  paymentTerms?: number;
+  salesperson?: number;
+  branch?: number;
+  dueFrom?: string;
+  dueTo?: string;
+  status?: string;
+  minDaysOverdue?: number;
+  page?: number;
+  pageSize?: number;
+}
+export interface PaymentDueRow {
+  docEntry: number;
+  docNum: number;
+  customerCode: string;
+  customerName: string | null;
+  postingDate: string;
+  dueDate: string;
+  paymentTerms: string | null;
+  invoiceAmount: number;
+  paidAmount: number;
+  outstandingAmount: number;
+  daysOverdue: number;
+  paymentStatus: 'Unpaid' | 'Partially paid';
+  salesperson: string | null;
+  branch: string | null;
+}
+export interface PaymentDueBreakdown { key: string; name: string | null; invoices: number; outstanding: number; overdue: number }
+export interface PaymentDueReport {
+  asOf: string;
+  totals: {
+    invoices: number; invoiceAmount: number; paidAmount: number; outstanding: number; overdue: number; overdueInvoices: number;
+    dueToday: number; dueWithin7: number; dueWithin15: number; dueWithin30: number; customerAccountBalance: number;
+  };
+  byCustomer: PaymentDueBreakdown[];
+  byTerms: PaymentDueBreakdown[];
+  totalCount: number;
+  rows: PaymentDueRow[];
+}

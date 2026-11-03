@@ -21,4 +21,6 @@ public interface ISalesDetailReportsService
     Task<SalesAnalysisReportDto> GetSalesAnalysisAsync(DetailReportQuery query, CancellationToken ct = default);
     Task<OutstandingLedgerDto> GetLedgerOutstandingAsync(LedgerOutstandingQuery query, CancellationToken ct = default);
     Task<OutstandingLinesReportDto> GetLedgerOutstandingLinesAsync(LedgerOutstandingQuery query, CancellationToken ct = default);
+    Task<KpiDocumentReportDto> GetKpiDocumentsAsync(DetailReportQuery query, CancellationToken ct = default);
+    Task<PaymentDueReportDto> GetPaymentDueAsync(PaymentDueQuery query, CancellationToken ct = default);
 }

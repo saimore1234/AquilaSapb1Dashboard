@@ -12,6 +12,8 @@ export interface SalesReportEntry {
   description: string;
   path: string;
   built: boolean;
+  /** Opened from a dashboard card or link only; not listed in the hub or the report catalogue. */
+  hidden?: boolean;
 }
 
 export const SALES_REPORTS_PATH = '/sales/reports';
@@ -38,6 +40,8 @@ export const salesReports: SalesReportEntry[] = [
   { id: 'unpaid-invoices', number: 20, name: 'Outstanding Customer Invoices', description: 'Unpaid A/R invoices — payment status (invoice total minus paid), with days overdue.', path: `${SALES_REPORTS_PATH}/unpaid-invoices`, built: true },
   { id: 'lost-customers', number: 21, name: 'Lost Customer Analysis', description: 'Customers invoiced last financial year but not this year, with their previous-year sales.', path: `${SALES_REPORTS_PATH}/lost-customers`, built: true },
   { id: 'order-execution', number: 22, name: 'Order Execution', description: 'Days from sales order to invoice, per order and invoice, with pending orders and an ageing summary.', path: `${SALES_REPORTS_PATH}/order-execution`, built: true },
+  { id: 'payment-due', number: 23, name: 'Payment Due Register', description: 'Open A/R invoices by SAP due date and payment terms: overdue, due today and due within 7 / 15 / 30 days, with customer-wise and terms-wise due.', path: `${SALES_REPORTS_PATH}/payment-due`, built: true },
+  { id: 'kpi-documents', number: 24, name: 'Dashboard KPI documents', description: 'The documents behind a Sales Dashboard card.', path: `${SALES_REPORTS_PATH}/kpi-documents`, built: true, hidden: true },
   { id: 'sample-status', number: 8, name: 'Sample Status', description: 'Sample requests and their stage progress.', path: `${SALES_REPORTS_PATH}/sample-status`, built: true }
 ];
 

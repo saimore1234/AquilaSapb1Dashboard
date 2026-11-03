@@ -13,7 +13,7 @@ namespace SAPB1.Api.Services;
 /// with the reporting period passed as typed parameters. Joins to dimension tables (OITM, OWHS, OLCT, OSLP, OCRD) are all
 /// many-to-one, so they never multiply document lines; totals are computed by the same FROM/WHERE as the rows shown.
 /// </summary>
-public class SqlSalesDetailReportsService : ISalesDetailReportsService
+public partial class SqlSalesDetailReportsService : ISalesDetailReportsService
 {
     private readonly ICompanyConnectionFactory _connectionFactory;
     private readonly ICompanyContext _company;
