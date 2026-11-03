@@ -12,6 +12,11 @@ export function fyStartDate(today = new Date()) {
   return new Date(today.getMonth() >= 3 ? today.getFullYear() : today.getFullYear() - 1, 3, 1);
 }
 
+/** End (31 March) of the current Apr–Mar financial year. */
+export function fyEndDate(today = new Date()) {
+  return new Date(fyStartDate(today).getFullYear() + 1, 2, 31);
+}
+
 /** Percentage change vs a previous value; null when there is nothing to compare against. */
 export function pctChange(current: number, previous: number): number | null {
   if (!previous) return null;

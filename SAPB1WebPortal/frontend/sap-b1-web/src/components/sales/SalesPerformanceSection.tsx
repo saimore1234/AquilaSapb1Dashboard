@@ -11,6 +11,7 @@ import { formatCount, formatInr, formatLongDate, formatPct, formatPeriod, amount
 import { taxLabel, useSalesFilters } from './salesFilters';
 import { useSalesRefresh } from './salesRefresh';
 import { useChartTheme, useSalesOverview } from './salesShared';
+import { fyEndDate, fyStartDate, toIsoDate } from './salesUtils';
 import { salesReportLink } from '../../data/salesReports';
 
 const statusClass: Record<SalesPerformance['status'], string> = {
@@ -75,17 +76,50 @@ export default function SalesPerformanceSection() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [applied, reload, tick]);
 
-  if (error) return <div className="panel p-4"><ErrorState message={error} onRetry={() => setReload((n) => n + 1)} /></div>;
+  // Sales Turnover vs Target has its OWN period — the current Apr–Mar financial year — independent of the main date filter.
+  // Only the date range is separate; unit / tax / credit-note / dimension filters still apply.
+  const fyFrom = toIsoDate(fyStartDate());
+  const fyTo = toIsoDate(fyEndDate());
+  const [fy, setFy] = useState<SalesPerformance | null>(null);
+  const [fyLoading, setFyLoading] = useState(true);
+  const [fyError, setFyError] = useState<string | null>(null);
+  const seenFyTick = useRef(tick);
+  useEffect(() => {
+    const silent = seenFyTick.current !== tick;
+    seenFyTick.current = tick;
+    if (!silent) { setFyLoading(true); setFy(null); }
+    setFyError(null);
+    const ctl = new AbortController();
+    getSalesPerformance({
+      dateFrom: fyFrom,
+      dateTo: fyTo,
+      unit: applied.unit ? Number(applied.unit) : undefined,
+      includeTax: applied.includeTax,
+      netOfCreditNotes: applied.netOfCreditNotes,
+      customerGroup: applied.customerGroup ? Number(applied.customerGroup) : undefined,
+      salesperson: applied.salesperson ? Number(applied.salesperson) : undefined,
+      productCategory: applied.category || undefined
+    }, ctl.signal)
+      .then((d) => { if (ctl.signal.aborted) return; setFy(d); setFyLoading(false); })
+      .catch((err) => { if (ctl.signal.aborted || err?.code === 'ERR_CANCELED') return; setFyError(err?.response?.data?.message || err.message || 'Unable to load sales turnover vs target.'); setFyLoading(false); });
+    return () => ctl.abort();
+    // Deliberately NOT keyed on applied.from / applied.to: the main date range must not move this card.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [applied.unit, applied.includeTax, applied.netOfCreditNotes, applied.customerGroup, applied.salesperson, applied.category, fyFrom, fyTo, reload, tick]);
 
-  const t = data?.target ?? 0;
-  const cmp = data ? data.comparisonActual : 0; // ex-tax actual: the basis targets are set on
-  const achieved = data ? (data.targetConfigured ? Math.min(Math.max(cmp, 0), t) : Math.max(data.actual, 0)) : 0;
-  const remaining = data && data.targetConfigured ? Math.max(t - cmp, 0) : 0;
-  const over = !!data && data.targetConfigured && cmp > t;
-  const pie = data?.targetConfigured
+  if (error || fyError) return <div className="panel p-4"><ErrorState message={(error || fyError) as string} onRetry={() => setReload((n) => n + 1)} /></div>;
+
+  const tv = fy; // target-card data (financial-year period)
+  const tvLoading = fyLoading || !tv;
+  const t = tv?.target ?? 0;
+  const cmp = tv ? tv.comparisonActual : 0; // ex-tax actual: the basis targets are set on
+  const achieved = tv ? (tv.targetConfigured ? Math.min(Math.max(cmp, 0), t) : Math.max(tv.actual, 0)) : 0;
+  const remaining = tv && tv.targetConfigured ? Math.max(t - cmp, 0) : 0;
+  const over = !!tv && tv.targetConfigured && cmp > t;
+  const pie = tv?.targetConfigured
     ? [{ name: 'Achieved sales', value: achieved }, { name: 'Remaining target', value: remaining }]
     : [{ name: 'Actual sales (no target configured)', value: achieved }];
-  const pieColors = data?.targetConfigured ? [cur, prev] : [prev];
+  const pieColors = tv?.targetConfigured ? [cur, prev] : [prev];
   const unitSel = data?.selectedUnit ?? null;
 
   return (
@@ -96,38 +130,38 @@ export default function SalesPerformanceSection() {
           <div>
             <h2 className="text-sm font-semibold text-ink-primary">Sales Turnover vs Target</h2>
             <p className="text-xs text-ink-secondary mt-0.5">
-              {formatPeriod(applied.from, applied.to)} · {data?.selectedUnitLabel ?? 'All units'} · {taxLabel(applied.includeTax)}
+              {formatPeriod(fyFrom, fyTo)} · {tv?.selectedUnitLabel ?? 'All units'} · {taxLabel(applied.includeTax)}
               {applied.netOfCreditNotes ? ' · net of credit notes' : ' · invoices only'}
             </p>
           </div>
-          {data && <span className={statusClass[data.status]}>{data.status}</span>}
+          {tv && <span className={statusClass[tv.status]}>{tv.status}</span>}
         </div>
 
         <div className="mt-3 grid gap-4 lg:grid-cols-[minmax(0,1fr)_minmax(0,19rem)] items-start">
           <div className="space-y-3 min-w-0">
-            {loading || !data ? (
+            {tvLoading ? (
               <div className="grid grid-cols-2 sm:grid-cols-3 xl:grid-cols-5 gap-2"><Skeleton className="h-[68px]" /><Skeleton className="h-[68px]" /><Skeleton className="h-[68px]" /><Skeleton className="h-[68px]" /><Skeleton className="h-[68px]" /></div>
             ) : (
               <div className="grid grid-cols-2 sm:grid-cols-3 xl:grid-cols-5 gap-2">
-                <Metric label="Actual turnover" value={formatInr(data.actual)} sub={`${formatLongDate(data.dateFrom.slice(0, 10))} – ${formatLongDate(data.dateTo.slice(0, 10))}`} />
-                <Metric label="Target" value={data.targetConfigured ? formatInr(data.target) : 'Not configured'} sub={data.targetConfigured ? `${data.targetLevel ?? 'Approved target'} · ${formatCount(data.targetCount)} approved` : 'No approved target for this selection'} tone={data.targetConfigured ? undefined : 'text-ink-tertiary'} />
-                <Metric label="Achievement" value={data.targetConfigured ? formatPct(data.achievementPct) : '–'} tone={data.targetConfigured ? (over ? 'text-success' : undefined) : 'text-ink-tertiary'} sub="Actual ÷ target" />
-                <Metric label={over ? 'Over target by' : 'Remaining target'} value={data.targetConfigured ? formatInr(over ? cmp - t : data.remaining) : '–'} tone={data.targetConfigured ? undefined : 'text-ink-tertiary'} sub={data.targetConfigured ? (over ? 'Target exceeded' : 'Target − actual') : undefined} />
-                <Metric label="Variance" value={data.targetConfigured ? formatInr(data.variance) : '–'} tone={data.targetConfigured ? amountTone(data.variance, { zero: true }) : 'text-ink-tertiary'} sub="Actual − target" />
+                <Metric label="Actual turnover" value={formatInr(tv.actual)} sub={`${formatLongDate(tv.dateFrom.slice(0, 10))} – ${formatLongDate(tv.dateTo.slice(0, 10))}`} />
+                <Metric label="Target" value={tv.targetConfigured ? formatInr(tv.target) : 'Not configured'} sub={tv.targetConfigured ? `${tv.targetLevel ?? 'Approved target'} · ${formatCount(tv.targetCount)} approved` : 'No approved target for this selection'} tone={tv.targetConfigured ? undefined : 'text-ink-tertiary'} />
+                <Metric label="Achievement" value={tv.targetConfigured ? formatPct(tv.achievementPct) : '–'} tone={tv.targetConfigured ? (over ? 'text-success' : undefined) : 'text-ink-tertiary'} sub="Actual ÷ target" />
+                <Metric label={over ? 'Over target by' : 'Remaining target'} value={tv.targetConfigured ? formatInr(over ? cmp - t : tv.remaining) : '–'} tone={tv.targetConfigured ? undefined : 'text-ink-tertiary'} sub={tv.targetConfigured ? (over ? 'Target exceeded' : 'Target − actual') : undefined} />
+                <Metric label="Variance" value={tv.targetConfigured ? formatInr(tv.variance) : '–'} tone={tv.targetConfigured ? amountTone(tv.variance, { zero: true }) : 'text-ink-tertiary'} sub="Actual − target" />
               </div>
             )}
 
-            {data && data.targetConfigured && (
+            {tv && tv.targetConfigured && (
               <div>
-                <div className="h-2.5 rounded-sm bg-surface-tertiary overflow-hidden" role="progressbar" aria-label="Achievement" aria-valuenow={Math.round(Math.min(data.achievementPct ?? 0, 100))} aria-valuemin={0} aria-valuemax={100}>
-                  <div className={`h-full ${over ? 'bg-success' : 'bg-brand-600'}`} style={{ width: `${Math.min(data.achievementPct ?? 0, 100)}%` }} />
+                <div className="h-2.5 rounded-sm bg-surface-tertiary overflow-hidden" role="progressbar" aria-label="Achievement" aria-valuenow={Math.round(Math.min(tv.achievementPct ?? 0, 100))} aria-valuemin={0} aria-valuemax={100}>
+                  <div className={`h-full ${over ? 'bg-success' : 'bg-brand-600'}`} style={{ width: `${Math.min(tv.achievementPct ?? 0, 100)}%` }} />
                 </div>
               </div>
             )}
 
-            {data && (
+            {tv && (
               <div className="text-xs text-ink-secondary space-y-1">
-                <p><span className="font-medium text-ink-primary">What is compared:</span> {data.targetBasis}</p>
+                <p><span className="font-medium text-ink-primary">What is compared:</span> {tv.targetBasis}</p>
                 <p className="flex flex-wrap gap-x-4">
                   <Link className="font-medium text-brand-600 dark:text-brand-400 hover:underline" to={salesReportLink('sales-register', { unit: applied.unit || undefined })}>Actual: Sales Register →</Link>
                   <Link className="font-medium text-brand-600 dark:text-brand-400 hover:underline" to="/sales/target-management">Targets: Target Management →</Link>
@@ -138,7 +172,7 @@ export default function SalesPerformanceSection() {
 
           {/* Doughnut */}
           <div className="min-w-0">
-            {loading || !data ? (
+            {tvLoading ? (
               <Skeleton className="h-[220px] w-full" />
             ) : (
               <>
@@ -152,8 +186,8 @@ export default function SalesPerformanceSection() {
                     </PieChart>
                   </ResponsiveContainer>
                   <div className="pointer-events-none absolute inset-0 flex flex-col items-center justify-center text-center">
-                    <span className="text-[10px] uppercase tracking-wide text-ink-tertiary">{data.targetConfigured ? 'Achievement' : 'Target'}</span>
-                    <span className="text-xl font-semibold tabular-nums text-ink-primary">{data.targetConfigured ? formatPct(data.achievementPct) : 'Not set'}</span>
+                    <span className="text-[10px] uppercase tracking-wide text-ink-tertiary">{tv.targetConfigured ? 'Achievement' : 'Target'}</span>
+                    <span className="text-xl font-semibold tabular-nums text-ink-primary">{tv.targetConfigured ? formatPct(tv.achievementPct) : 'Not set'}</span>
                   </div>
                 </div>
                 <ul className="mt-1 space-y-1 text-xs">
@@ -165,8 +199,8 @@ export default function SalesPerformanceSection() {
                     </li>
                   ))}
                 </ul>
-                {over && <p className="mt-1 text-[11px] text-ink-tertiary">The ring is capped at 100% so the segments stay meaningful; the true achievement ({formatPct(data.achievementPct)}) is shown in the centre and above.</p>}
-                {!data.targetConfigured && <p className="mt-1 text-[11px] text-ink-tertiary">The chart shows actual sales only — no approved target exists for this selection.</p>}
+                {over && <p className="mt-1 text-[11px] text-ink-tertiary">The ring is capped at 100% so the segments stay meaningful; the true achievement ({formatPct(tv.achievementPct)}) is shown in the centre and above.</p>}
+                {!tv.targetConfigured && <p className="mt-1 text-[11px] text-ink-tertiary">The chart shows actual sales only — no approved target exists for this selection.</p>}
               </>
             )}
           </div>
