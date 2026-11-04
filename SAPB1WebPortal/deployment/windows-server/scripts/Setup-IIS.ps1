@@ -18,7 +18,7 @@
 [CmdletBinding(SupportsShouldProcess = $true, ConfirmImpact = 'High')]
 param(
     [string]$Root = 'D:\AquilaDashboard',
-    [string]$HostName = 'dashboard.companydomain.com',
+    [string]$HostName = '',                        # empty = no domain yet: the site answers on every host name / the server IP over http :80
     [string]$CertificateThumbprint = '',          # thumbprint of the server certificate in LocalMachine\My (leave empty to create the HTTPS binding later)
     [string]$WebSite = 'AquilaDashboard',
     [string]$ApiSite = 'AquilaApi',
@@ -77,11 +77,12 @@ Ensure-Pool $ApiPool $true
 
 Write-Host "`n== 4. Sites ==" -ForegroundColor Cyan
 if (-not (Test-Path "IIS:\Sites\$WebSite")) {
-    Step "Create site $WebSite -> $Root\Frontend (http :80, host $HostName)" {
+    Step "Create site $WebSite -> $Root\Frontend (http :80, host '$(if ($HostName) { $HostName } else { '*  (no domain)' })')" {
         New-Website -Name $WebSite -PhysicalPath (Join-Path $Root 'Frontend') -ApplicationPool $WebPool -Port 80 -HostHeader $HostName | Out-Null
     }
 } else { Write-Host "  exists: site $WebSite" }
-if ($CertificateThumbprint) {
+if ($CertificateThumbprint -and -not $HostName) { Write-Warning 'A certificate needs a -HostName. HTTPS binding skipped (no-domain mode: http only).' }
+elseif ($CertificateThumbprint) {
     if (-not (Get-WebBinding -Name $WebSite -Protocol https -ErrorAction SilentlyContinue)) {
         Step "Add HTTPS binding :443 ($HostName) with certificate $CertificateThumbprint" {
             New-WebBinding -Name $WebSite -Protocol https -Port 443 -HostHeader $HostName -SslFlags 1
@@ -89,7 +90,7 @@ if ($CertificateThumbprint) {
             (Get-WebBinding -Name $WebSite -Protocol https).AddSslCertificate($cert.Thumbprint, 'My')
         }
     } else { Write-Host '  HTTPS binding already present.' }
-} else { Write-Warning 'No -CertificateThumbprint given: add the HTTPS binding later (IIS_CONFIGURATION_GUIDE.md, section "HTTPS").' }
+} elseif ($HostName) { Write-Warning 'No -CertificateThumbprint given: add the HTTPS binding later (IIS_CONFIGURATION_GUIDE.md, section "HTTPS").' }
 
 if (-not (Test-Path "IIS:\Sites\$ApiSite")) {
     Step "Create site $ApiSite -> $Root\Backend on 127.0.0.1:$ApiPort (loopback only, not reachable from the network)" {
