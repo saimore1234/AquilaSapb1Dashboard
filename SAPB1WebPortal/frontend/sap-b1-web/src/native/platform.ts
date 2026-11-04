@@ -1,7 +1,15 @@
 import { Capacitor } from '@capacitor/core';
 
-/** True only inside the Android / iOS app (Capacitor). On the website every native feature is skipped, so the web build behaves as before. */
-export const isNative = Capacitor.isNativePlatform();
+const isRemoteVercelPortal =
+  typeof window !== 'undefined' &&
+  window.location.hostname === 'aquila-sapb1-dashboard.vercel.app';
+
+/**
+ * True only inside the Android / iOS app (Capacitor) when the React app is bundled into the APK/IPA. On the website every native feature is
+ * skipped, so the web build behaves as before. The remotely hosted Vercel portal is intentionally a pure WebView: it keeps using the
+ * relative '/api' that Vercel proxies to the backend.
+ */
+export const isNative = Capacitor.isNativePlatform() && !isRemoteVercelPortal;
 export const nativePlatform = Capacitor.getPlatform(); // 'android' | 'ios' | 'web'
 
 /**
