@@ -34,7 +34,7 @@ param(
     [string]$SourceRoot = '',
     [string]$TargetRoot = 'D:\AquilaDashboard',
     [string]$PublicUrl = '',                      # e.g. https://dashboard.companydomain.com ; empty = skip the public-URL checks
-    [int]$ApiPort = 5010,
+    [int]$ApiPort = 5011,
     [string]$ApiPool = 'AquilaApi',
     [string]$BackupName = '',                     # Rollback: folder name under Backups (default: newest)
     [int]$KeepBackups = 10,

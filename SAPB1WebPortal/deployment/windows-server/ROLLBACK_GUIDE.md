@@ -48,7 +48,7 @@ robocopy "$b\Backend"  "$root\Backend"  /MIR /XD logs /XF appsettings.Production
 Remove-Item "$root\Backend\app_offline.htm"
 
 # 4. check
-curl.exe -s http://127.0.0.1:5010/api/health
+curl.exe -s http://127.0.0.1:5011/api/health
 ```
 
 ## 5. When the new version made things worse in another way

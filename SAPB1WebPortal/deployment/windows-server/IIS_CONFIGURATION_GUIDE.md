@@ -43,7 +43,7 @@ $r = 'D:\AquilaDashboard'
 | Site name | `AquilaDashboard` | `AquilaApi` |
 | Physical path | `D:\AquilaDashboard\Frontend` | `D:\AquilaDashboard\Backend` |
 | Pool | `AquilaWeb` | `AquilaApi` |
-| Bindings | `http :80` and `https :443`, host `dashboard.companydomain.com` | `http 127.0.0.1:5010` **only** |
+| Bindings | `http :80` and `https :443`, host `dashboard.companydomain.com` | `http 127.0.0.1:5011` **only** |
 | .NET CLR version | No Managed Code | No Managed Code |
 | Pipeline | Integrated | Integrated |
 | Pool extras | — | Start mode **AlwaysRunning**, Idle time-out **0**, Regular time interval (recycle) **0**, Load user profile **True**; site Preload Enabled **True** |
@@ -59,7 +59,7 @@ Set-ItemProperty IIS:\AppPools\AquilaApi -Name recycling.periodicRestart.time -V
 Set-ItemProperty IIS:\AppPools\AquilaApi -Name processModel.loadUserProfile -Value $true
 
 New-Website AquilaDashboard -PhysicalPath D:\AquilaDashboard\Frontend -ApplicationPool AquilaWeb -Port 80 -HostHeader dashboard.companydomain.com
-New-Website AquilaApi -PhysicalPath D:\AquilaDashboard\Backend -ApplicationPool AquilaApi -Port 5010 -IPAddress 127.0.0.1
+New-Website AquilaApi -PhysicalPath D:\AquilaDashboard\Backend -ApplicationPool AquilaApi -Port 5011 -IPAddress 127.0.0.1
 Set-ItemProperty IIS:\Sites\AquilaApi -Name applicationDefaults.preloadEnabled -Value $true
 ```
 Remove the *Default Web Site* binding on port 80 if it conflicts. The API site has no public binding, so it can only be reached from the server itself.
@@ -100,7 +100,7 @@ Source: `frontend/sap-b1-web/public/web.config`. Rules, in order:
 | # | Rule | Purpose |
 |---|---|---|
 | 1 | HTTP to HTTPS | 301 redirect unless the host is localhost/127.0.0.1 |
-| 2 | API reverse proxy (https) | `^api/(.*)` → `http://127.0.0.1:5010/api/{R:1}`, query string kept, sets `X-Forwarded-Proto: https` |
+| 2 | API reverse proxy (https) | `^api/(.*)` → `http://127.0.0.1:5011/api/{R:1}`, query string kept, sets `X-Forwarded-Proto: https` |
 | 3 | API reverse proxy (http) | same, for local plain-http checks |
 | 4 | SPA fallback | anything that is not a file/folder, not `/api…`, not `/assets/…` → `/index.html` |
 
@@ -112,7 +112,7 @@ Other settings in the same file:
 * **Compression**: `urlCompression` static + dynamic on (the Static/Dynamic Compression features are installed in §1).
 * **Caching**: `index.html` is never cached; `/assets/*` (hashed file names) cached for 365 days.
 * **Headers**: `X-Content-Type-Options`, `X-Frame-Options: DENY`, `Referrer-Policy`, `Permissions-Policy`, `Strict-Transport-Security`; `X-Powered-By` and the `Server` header removed.
-* If the API port is not 5010, change the two `127.0.0.1:5010` targets.
+* If the API port is not 5011, change the two `127.0.0.1:5011` targets.
 
 **Content-Security-Policy** is intentionally *not* enforced by default: `index.html` contains an inline theme script and the app has not been tested against a policy. To try one, add it first as `Content-Security-Policy-Report-Only`, watch the browser console on every module, and only then enforce it.
 
@@ -150,14 +150,14 @@ The print worker writes temporary files to the pool identity's temp folder; with
 ```powershell
 New-NetFirewallRule -DisplayName 'Aquila HTTP'  -Direction Inbound -Protocol TCP -LocalPort 80  -Action Allow
 New-NetFirewallRule -DisplayName 'Aquila HTTPS' -Direction Inbound -Protocol TCP -LocalPort 443 -Action Allow
-New-NetFirewallRule -DisplayName 'Aquila API (block external)' -Direction Inbound -Protocol TCP -LocalPort 5010 -Action Block
+New-NetFirewallRule -DisplayName 'Aquila API (block external)' -Direction Inbound -Protocol TCP -LocalPort 5011 -Action Block
 ```
 Do not open 1433 (SQL Server). If SQL is on another machine, allow it only from this server's IP.
 
 ## 10. Quick tests
 
 ```powershell
-curl.exe -s http://127.0.0.1:5010/api/health                      # direct to the API (loopback)
+curl.exe -s http://127.0.0.1:5011/api/health                      # direct to the API (loopback)
 curl.exe -s -H "Host: dashboard.companydomain.com" http://localhost/api/health   # through IIS + ARR (JSON, not HTML)
 curl.exe -sI https://dashboard.companydomain.com/sales/reports/payment-due        # 200 text/html (SPA fallback)
 curl.exe -s -o NUL -w "%{http_code}" https://dashboard.companydomain.com/api/sales/reports/payment-due   # 401 (routed to the API)

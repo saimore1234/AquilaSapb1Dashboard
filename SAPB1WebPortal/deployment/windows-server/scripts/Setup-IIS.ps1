@@ -24,7 +24,7 @@ param(
     [string]$ApiSite = 'AquilaApi',
     [string]$WebPool = 'AquilaWeb',
     [string]$ApiPool = 'AquilaApi',
-    [int]$ApiPort = 5010
+    [int]$ApiPort = 5011
 )
 
 $ErrorActionPreference = 'Stop'

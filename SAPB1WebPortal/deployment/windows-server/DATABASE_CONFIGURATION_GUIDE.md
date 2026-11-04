@@ -96,7 +96,7 @@ If SQL Server is the **same** server as today, nothing to move. If you are migra
 sqlcmd -S localhost -U sapb1_portal_reader -d AOPL_LIVE_BRANCH -Q "SELECT COUNT(*) FROM OINV"     # works
 sqlcmd -S localhost -U sapb1_portal_reader -d AOPL_LIVE_BRANCH -Q "UPDATE OINV SET Comments=Comments WHERE 1=0"   # must FAIL (read-only)
 sqlcmd -S localhost -U aquila_portal -d SAPB1PortalAdmin -Q "SELECT COUNT(*) FROM dbo.Users"
-curl.exe -s http://127.0.0.1:5010/api/health/ready                                                # {"status":"ready","database":"reachable"}
+curl.exe -s http://127.0.0.1:5011/api/health/ready                                                # {"status":"ready","database":"reachable"}
 ```
 (`-P` is deliberately not on the command line; `sqlcmd` prompts, or set `$env:SQLCMDPASSWORD` for the session and clear it afterwards.)
 

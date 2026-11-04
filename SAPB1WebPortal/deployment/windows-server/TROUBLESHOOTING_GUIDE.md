@@ -12,8 +12,8 @@
 
 Quick health commands:
 ```powershell
-curl.exe -s http://127.0.0.1:5010/api/health            # API alive?
-curl.exe -s http://127.0.0.1:5010/api/health/ready      # + portal database reachable?
+curl.exe -s http://127.0.0.1:5011/api/health            # API alive?
+curl.exe -s http://127.0.0.1:5011/api/health/ready      # + portal database reachable?
 .\DEPLOYMENT_POWERSHELL_SCRIPT.ps1 -Action Verify -PublicUrl https://dashboard.companydomain.com
 Get-WebAppPoolState AquilaApi ; Get-WebAppPoolState AquilaWeb
 Get-Website | Select Name, State, Bindings
@@ -26,7 +26,7 @@ Get-Website | Select Name, State, Bindings
 | **HTTP 500.19** on the whole site, "config section rewrite is not defined" / "cannot add duplicate" | URL Rewrite not installed (or `web.config` edited badly) | Install URL Rewrite 2.1 (IIS guide §1); validate the XML |
 | **HTTP 500.19** mentioning `proxy` | ARR not installed | Install ARR 3.0, then enable the proxy (IIS guide §5) |
 | Home page loads but every API call returns **404** or HTML | ARR proxy disabled, or rule order broken | `Get-WebConfigurationProperty … system.webServer/proxy -Name enabled` must be `True`; test `curl http://localhost/api/health` — JSON expected |
-| API calls return **502.3 Bad Gateway** | API site stopped / not listening on 5010 | `Get-Website AquilaApi`; `Start-Website AquilaApi`; `Restart-WebAppPool AquilaApi`; `Test-NetConnection 127.0.0.1 -Port 5010` |
+| API calls return **502.3 Bad Gateway** | API site stopped / not listening on 5011 | `Get-Website AquilaApi`; `Start-Website AquilaApi`; `Restart-WebAppPool AquilaApi`; `Test-NetConnection 127.0.0.1 -Port 5011` |
 | API calls return **500.0 / "Rewrite … server variable is not allowed"** | `HTTP_X_FORWARDED_PROTO` not in *allowedServerVariables* | Run the command in IIS guide §5 (or `Setup-IIS.ps1`) |
 | API **500.30 / 500.31 / 502.5** ("ASP.NET Core app failed to start") | Hosting Bundle missing/old, missing required setting, or a crash in start-up | Check `dotnet --list-runtimes` (8.0.x), install the Hosting Bundle then `net stop was /y; net start w3svc`; read the stdout log; confirm `Jwt__Key`, `PortalDb__ConnectionString` exist (`Set-AquilaSecrets.ps1 -List`) |
 | API **500.37** "failed to start within startup time limit" | slow first database connection | wait/retry; check SQL Server is running and reachable; raise `startupTimeLimit` |
@@ -37,7 +37,7 @@ Get-Website | Select Name, State, Bindings
 | Login works but every report says "unable to load" | company SQL login wrong/blocked | test the exact login with `sqlcmd` (Database guide §6); check `Logs\api` for `Login failed for user` |
 | `Login failed for user 'IIS APPPOOL\AquilaApi'` | portal DB connection uses `Trusted_Connection=True` but the pool identity has no SQL login | create the login (Database guide §3) or use SQL authentication |
 | Sudden **401 for everyone** after a deploy | `Jwt__Key` changed or missing | expected after a key change — log in again; if unintended restore the original value |
-| **401** only through the site but fine on 127.0.0.1:5010 | `Authorization` header stripped by something in front | check no other proxy/WAF removes it; ARR passes it by default |
+| **401** only through the site but fine on 127.0.0.1:5011 | `Authorization` header stripped by something in front | check no other proxy/WAF removes it; ARR passes it by default |
 | **429 Too many requests** | rate limit (20 logins/min and 1200 requests/min per IP by default) | a script/monitor is hammering; or many users share one NAT IP — raise `RateLimiting:PermitPerMinute` in `appsettings.Production.json` |
 | Everyone seems to come from `127.0.0.1` (logs, rate limit) | proxy not trusted so `X-Forwarded-For` ignored | `Hosting:TrustedProxies` must contain `127.0.0.1` and `::1` |
 | Large report times out / **504** | ARR proxy timeout or SQL command time | `system.webServer/proxy timeout` (default set to 5 min); look for the slow query in the log |
@@ -66,11 +66,11 @@ iisreset /noforce                                    # last resort, restarts all
 Get-Content (Get-ChildItem D:\AquilaDashboard\Logs\api\*.log | Sort LastWriteTime | Select -Last 1).FullName -Tail 50 -Wait
 
 # What is listening
-Get-NetTCPConnection -State Listen -LocalPort 80,443,5010 | Select LocalPort, OwningProcess
+Get-NetTCPConnection -State Listen -LocalPort 80,443,5011 | Select LocalPort, OwningProcess
 Get-NetFirewallRule -DisplayName 'Aquila*' | Select DisplayName, Enabled, Action
 
 # From a different PC: these must FAIL (not exposed)
-Test-NetConnection <server> -Port 5010
+Test-NetConnection <server> -Port 5011
 Test-NetConnection <server> -Port 1433
 ```
 

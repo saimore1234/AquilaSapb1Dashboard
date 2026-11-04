@@ -13,7 +13,7 @@ Browser ──HTTPS 443──► IIS site "AquilaDashboard"  (D:\AquilaDashboard
                          │  static React build, SPA fallback, security headers
                          │
                          └─ /api/*  ──ARR reverse proxy (same machine)──►  IIS site "AquilaApi"
-                                                                            127.0.0.1:5010 (loopback only)
+                                                                            127.0.0.1:5011 (loopback only)
                                                                             ASP.NET Core 8, in-process
                                                                               │
                                               ┌───────────────────────────────┴─────────────────┐
@@ -24,7 +24,7 @@ Browser ──HTTPS 443──► IIS site "AquilaDashboard"  (D:\AquilaDashboard
 ```
 
 * **One public address**, e.g. `https://dashboard.companydomain.com/` — the browser calls `/api/...` on the same origin, so there is **no CORS** to manage for the web app.
-* The API listens **only on loopback**; port 5010 is blocked from the network by a firewall rule, and SQL Server is never exposed.
+* The API listens **only on loopback**; port 5011 is blocked from the network by a firewall rule, and SQL Server is never exposed.
 * Secrets (JWT key, SQL connection strings, portal administrator hash) are **IIS application-pool environment variables**, not files.
 
 ## 2. What was Vercel-specific (and what changed)
@@ -157,7 +157,7 @@ Mark each item only after you have opened it and seen correct data.
 ## 12. Security checklist
 
 * HTTPS only; certificate valid; HSTS header present (set by `web.config`).
-* Port 5010 and SQL Server (1433) not reachable from other machines (`Test-NetConnection <server> -Port 5010` from a PC must fail).
+* Port 5011 and SQL Server (1433) not reachable from other machines (`Test-NetConnection <server> -Port 5011` from a PC must fail).
 * SQL logins are least-privilege (see database guide); no credentials in source, `web.config`, scripts or the Frontend folder.
 * `Jwt__Key` ≥ 32 random characters, unique to this server.
 * Roles/permissions unchanged (enforced server-side by the existing `PageAccessFilter` and scope rules).
